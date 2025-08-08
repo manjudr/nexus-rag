@@ -23,13 +23,22 @@ class MilvusVectorDB(BaseVectorDB):
         insert_data = [{"vector": emb, "text": text} for text, emb in zip(data, embeddings)]
         self.client.insert(collection_name=self.collection_name, data=insert_data)
 
-    def search(self, query_embedding):
+    def search(self, query_embedding, top_k: int):
         results = self.client.search(
             collection_name=self.collection_name,
             data=[query_embedding],
-            limit=self.top_k,
+            limit=top_k,
             output_fields=["text"]
         )
         if results and len(results[0]) > 0:
             return [hit.entity.get("text") for hit in results[0]]
         return []
+
+    def get_all_documents(self):
+        results = self.client.query(
+            collection_name=self.collection_name,
+            filter="",
+            output_fields=["text"],
+            limit=16384  # Max limit for a query
+        )
+        return [result['text'] for result in results]

@@ -3,3 +3,5 @@ sentence-transformers
 pymilvus
 transformers
 torch
+uvicorn==0.30.1
+rank-bm25==0.2.2

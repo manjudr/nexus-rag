@@ -10,5 +10,5 @@ class BaseVectorDB(ABC):
         pass
 
     @abstractmethod
-    def search(self, query_embedding):
+    def search(self, query_embedding, top_k: int):
         pass
