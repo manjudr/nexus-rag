@@ -1,0 +1,57 @@
+{
+  "biology_plants.pdf": {
+    "title": "Plant Biology and Growth",
+    "author": "Dr. Sarah Johnson",
+    "course": "Biology",
+    "subject": "Botany",
+    "medium": "English",
+    "board": "CBSE",
+    "grade": "Class 10",
+    "topics": ["plant structure", "photosynthesis", "plant growth", "reproduction", "nutrients"],
+    "description": "Comprehensive guide to plant biology covering growth, reproduction, and photosynthesis"
+  },
+  "physics_motion.pdf": {
+    "title": "Laws of Motion and Forces",
+    "author": "Prof. Michael Chen",
+    "course": "Physics", 
+    "subject": "Mechanics",
+    "medium": "English",
+    "board": "CBSE",
+    "grade": "Class 11",
+    "topics": ["newton's laws", "force", "motion", "acceleration", "momentum"],
+    "description": "Detailed explanation of Newton's laws and principles of motion"
+  },
+  "chemistry_atoms.pdf": {
+    "title": "Atomic Structure and Bonding",
+    "author": "Dr. Emily Rodriguez",
+    "course": "Chemistry",
+    "subject": "Inorganic Chemistry", 
+    "medium": "English",
+    "board": "CBSE",
+    "grade": "Class 11",
+    "topics": ["atomic structure", "electrons", "chemical bonding", "periodic table", "molecules"],
+    "description": "Foundation concepts of atomic structure and chemical bonding"
+  },
+  "math_algebra.pdf": {
+    "title": "Algebraic Expressions and Equations",
+    "author": "Mr. David Kumar",
+    "course": "Mathematics",
+    "subject": "Algebra",
+    "medium": "English", 
+    "board": "CBSE",
+    "grade": "Class 9",
+    "topics": ["algebraic expressions", "linear equations", "quadratic equations", "factorization", "polynomials"],
+    "description": "Complete guide to algebraic expressions, equations, and their applications"
+  },
+  "geography_climate.pdf": {
+    "title": "Climate and Weather Patterns",
+    "author": "Ms. Priya Sharma",
+    "course": "Geography",
+    "subject": "Physical Geography",
+    "medium": "English",
+    "board": "CBSE", 
+    "grade": "Class 12",
+    "topics": ["climate change", "weather patterns", "monsoon", "global warming", "atmosphere"],
+    "description": "Study of climate systems, weather patterns, and environmental changes"
+  }
+}

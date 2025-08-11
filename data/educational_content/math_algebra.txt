@@ -1,0 +1,59 @@
+ALGEBRAIC EXPRESSIONS AND EQUATIONS
+
+Chapter 1: Introduction to Algebra
+
+Algebra is a branch of mathematics that uses letters and symbols to represent numbers and quantities in formulas and equations.
+
+Chapter 2: Algebraic Expressions
+
+An algebraic expression is a mathematical phrase that can contain:
+- Numbers (constants)
+- Variables (letters like x, y, z)
+- Operations (+, -, ×, ÷)
+
+Examples:
+- 3x + 5
+- 2y - 7
+- x² + 4x + 3
+
+Chapter 3: Linear Equations
+
+A linear equation is an equation where the highest power of the variable is 1.
+
+Standard form: ax + b = 0
+
+Examples:
+- 2x + 3 = 7
+- 5y - 2 = 13
+- 3z + 1 = 10
+
+Solving steps:
+1. Isolate the variable term
+2. Divide by the coefficient
+3. Check your answer
+
+Chapter 4: Quadratic Equations
+
+A quadratic equation has the form: ax² + bx + c = 0
+
+Methods to solve:
+1. Factoring
+2. Quadratic formula: x = (-b ± √(b²-4ac))/2a
+3. Completing the square
+
+Chapter 5: Factorization
+
+Factorization is breaking down an expression into simpler parts (factors).
+
+Common methods:
+- Taking out common factors
+- Difference of squares: a² - b² = (a+b)(a-b)
+- Trinomial factoring
+
+Chapter 6: Applications
+
+Algebra is used in:
+- Solving real-world problems
+- Science calculations
+- Engineering
+- Economics and finance
