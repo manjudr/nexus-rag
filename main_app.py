@@ -28,34 +28,40 @@ from tools.vector_db_query import VectorDBQueryTool
 from data_processing.enhanced_educational_parser import EnhancedEducationalContentParser
 from data_processing.pdf_parser import PDFParser
 
-def setup_llm() -> GenerativeModel:
-    """Setup language model"""
-    if config.MODEL_CONFIG["provider"] == "openai":
-        return OpenAIGenerativeModel(model_name=config.MODEL_CONFIG["openai"]["llm"])
+def setup_llm():
+    """Initialize the language model based on configuration"""
+    current_models = config.MODELS[config.MODEL_PROVIDER]
+    
+    if config.MODEL_PROVIDER == "cloud":
+        return OpenAIGenerativeModel(model_name=current_models["llm"])
     else:
-        return HuggingFaceGenerativeModel(model_name=config.MODEL_CONFIG["local"]["llm"])
+        return HuggingFaceGenerativeModel(model_name=current_models["llm"])
 
-def setup_embedding_model() -> EmbeddingModel:
-    """Setup embedding model"""
-    if config.MODEL_CONFIG["provider"] == "openai":
-        return OpenAIEmbeddingModel(model_name=config.MODEL_CONFIG["openai"]["embedding_model"])
+def setup_embedding():
+    """Initialize the embedding model based on configuration"""
+    current_models = config.MODELS[config.MODEL_PROVIDER]
+    
+    if config.MODEL_PROVIDER == "cloud":
+        return OpenAIEmbeddingModel(model_name=current_models["embedding"])
     else:
-        return SentenceTransformerEmbeddingModel(model_name=config.MODEL_CONFIG["local"]["embedding_model"])
+        return SentenceTransformerEmbeddingModel(model_name=current_models["embedding"])
 
 def create_agent_tools(llm: GenerativeModel, embedding_model: EmbeddingModel, json_output: bool = False) -> list:
     """Create tools for each agent"""
     tools = []
+    current_models = config.MODELS[config.MODEL_PROVIDER]
+    langextract_enabled = current_models.get("langextract_enabled", False)
     
-    for agent_name, agent_config in config.AGENT_CONFIGS.items():
+    for agent_key, agent_config in config.AGENTS.items():
         print(f"🔧 Setting up {agent_config['name']}...")
         
         # Create enhanced vector DB for educational content
         if agent_config.get("enhanced_parsing", False):
             vector_db = EnhancedContentDiscoveryVectorDB(
                 db_path=config.DB_PATH,
-                collection_name=agent_config["collection_name"],
-                top_k=agent_config["top_k"],
-                use_langextract=config.LANGEXTRACT_CONFIG["enabled"]
+                collection_name=agent_config["collection"],
+                top_k=config.TOP_K,
+                use_langextract=langextract_enabled
             )
             
             # Use content discovery tool for enhanced features
@@ -65,7 +71,7 @@ def create_agent_tools(llm: GenerativeModel, embedding_model: EmbeddingModel, js
                 llm=llm,
                 name=agent_config["name"],
                 description=agent_config["description"],
-                top_k=agent_config["top_k"],
+                top_k=config.TOP_K,
                 return_json=json_output
             )
         else:
@@ -73,8 +79,8 @@ def create_agent_tools(llm: GenerativeModel, embedding_model: EmbeddingModel, js
             from vector_db.milvus_db import MilvusVectorDB
             vector_db = MilvusVectorDB(
                 db_path=config.DB_PATH,
-                collection_name=agent_config["collection_name"],
-                top_k=agent_config["top_k"]
+                collection_name=agent_config["collection"],
+                top_k=config.TOP_K
             )
             
             tool = VectorDBQueryTool(
@@ -83,7 +89,7 @@ def create_agent_tools(llm: GenerativeModel, embedding_model: EmbeddingModel, js
                 llm=llm,
                 name=agent_config["name"],
                 description=agent_config["description"],
-                top_k=agent_config["top_k"]
+                top_k=config.TOP_K
             )
         
         tools.append(tool)
@@ -94,11 +100,14 @@ def load_educational_content(embedding_model: EmbeddingModel):
     """Load educational content with enhanced parsing"""
     print("📚 Loading educational content...")
     
+    current_models = config.MODELS[config.MODEL_PROVIDER]
+    langextract_enabled = current_models.get("langextract_enabled", False)
+    
     # Setup enhanced parser
     parser = EnhancedEducationalContentParser(
         chunk_size=config.CHUNK_SIZE,
         chunk_overlap=config.CHUNK_OVERLAP,
-        use_langextract=config.LANGEXTRACT_CONFIG["enabled"]
+        use_langextract=langextract_enabled
     )
     
     # Setup enhanced vector DB
@@ -106,13 +115,13 @@ def load_educational_content(embedding_model: EmbeddingModel):
         db_path=config.DB_PATH,
         collection_name="educational_content",
         top_k=config.TOP_K,
-        use_langextract=config.LANGEXTRACT_CONFIG["enabled"]
+        use_langextract=langextract_enabled
     )
     
     vector_db.setup(dimension=embedding_model.get_embedding_dimension())
     
     # Check if we have PDF files to process directly
-    pdf_directory = config.EDUCATIONAL_CONTENT_CONFIG["content_directory"]
+    pdf_directory = config.CONTENT_DIRECTORY
     if os.path.exists(pdf_directory):
         pdf_files = [f for f in os.listdir(pdf_directory) if f.endswith('.pdf')]
         
@@ -168,8 +177,8 @@ def load_educational_content(embedding_model: EmbeddingModel):
     # Fallback to original method if no PDFs found
     # Parse content
     chunks, metadata = parser.parse_educational_content_enhanced(
-        config.EDUCATIONAL_CONTENT_CONFIG["content_directory"],
-        config.EDUCATIONAL_CONTENT_CONFIG["metadata_file"]
+        config.CONTENT_DIRECTORY,
+        config.METADATA_FILE
     )
     
     print(f"📄 Processing {len(chunks)} enhanced chunks...")
@@ -209,18 +218,20 @@ def main():
     args = parser.parse_args()
     
     if args.status:
-        print("🏗️ **Streamlined NexusRAG Status**")
+        print("🏗️ **Clean NexusRAG Status**")
         print(f"📊 **Configuration:**")
-        print(f"   • Model Provider: {config.MODEL_CONFIG['provider']}")
-        print(f"   • LangExtract: {'Enabled' if config.LANGEXTRACT_CONFIG['enabled'] else 'Disabled'}")
-        print(f"   • Agents: {', '.join(config.AGENT_CONFIGS.keys())}")
-        print(f"   • Content Directory: {config.EDUCATIONAL_CONTENT_CONFIG['content_directory']}")
+        current_models = config.MODELS[config.MODEL_PROVIDER]
+        langextract_status = "Enabled" if current_models.get("langextract_enabled", False) else "Disabled"
+        print(f"   • Model Provider: {config.MODEL_PROVIDER}")
+        print(f"   • LangExtract: {langextract_status}")
+        print(f"   • Agents: {', '.join(config.AGENTS.keys())}")
+        print(f"   • Content Directory: {config.CONTENT_DIRECTORY}")
         return
     
     # Setup models
     print("🔧 Setting up models...")
     llm = setup_llm()
-    embedding_model = setup_embedding_model()
+    embedding_model = setup_embedding()
     
     if args.load:
         load_educational_content(embedding_model)
