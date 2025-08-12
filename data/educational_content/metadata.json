@@ -1,57 +1,35 @@
 {
-  "biology_plants.pdf": {
-    "title": "Plant Biology and Growth",
-    "author": "Dr. Sarah Johnson",
+  "ncert_biology_class10.pdf": {
+    "title": "NCERT Biology Class 10",
+    "author": "NCERT",
     "course": "Biology",
-    "subject": "Botany",
+    "subject": "Life Processes",
     "medium": "English",
     "board": "CBSE",
     "grade": "Class 10",
-    "topics": ["plant structure", "photosynthesis", "plant growth", "reproduction", "nutrients"],
-    "description": "Comprehensive guide to plant biology covering growth, reproduction, and photosynthesis"
+    "topics": ["life processes", "control and coordination", "reproduction", "heredity", "natural resources"],
+    "description": "NCERT Class 10 Biology textbook covering fundamental life processes and biological concepts"
   },
-  "physics_motion.pdf": {
-    "title": "Laws of Motion and Forces",
-    "author": "Prof. Michael Chen",
-    "course": "Physics", 
-    "subject": "Mechanics",
+  "ncert_biology_class12.pdf": {
+    "title": "NCERT Biology Class 12",
+    "author": "NCERT",
+    "course": "Biology", 
+    "subject": "Advanced Biology",
     "medium": "English",
     "board": "CBSE",
-    "grade": "Class 11",
-    "topics": ["newton's laws", "force", "motion", "acceleration", "momentum"],
-    "description": "Detailed explanation of Newton's laws and principles of motion"
-  },
-  "chemistry_atoms.pdf": {
-    "title": "Atomic Structure and Bonding",
-    "author": "Dr. Emily Rodriguez",
-    "course": "Chemistry",
-    "subject": "Inorganic Chemistry", 
-    "medium": "English",
-    "board": "CBSE",
-    "grade": "Class 11",
-    "topics": ["atomic structure", "electrons", "chemical bonding", "periodic table", "molecules"],
-    "description": "Foundation concepts of atomic structure and chemical bonding"
-  },
-  "math_algebra.pdf": {
-    "title": "Algebraic Expressions and Equations",
-    "author": "Mr. David Kumar",
-    "course": "Mathematics",
-    "subject": "Algebra",
-    "medium": "English", 
-    "board": "CBSE",
-    "grade": "Class 9",
-    "topics": ["algebraic expressions", "linear equations", "quadratic equations", "factorization", "polynomials"],
-    "description": "Complete guide to algebraic expressions, equations, and their applications"
-  },
-  "geography_climate.pdf": {
-    "title": "Climate and Weather Patterns",
-    "author": "Ms. Priya Sharma",
-    "course": "Geography",
-    "subject": "Physical Geography",
-    "medium": "English",
-    "board": "CBSE", 
     "grade": "Class 12",
-    "topics": ["climate change", "weather patterns", "monsoon", "global warming", "atmosphere"],
-    "description": "Study of climate systems, weather patterns, and environmental changes"
+    "topics": ["reproduction", "genetics", "evolution", "human health", "biotechnology", "ecology"],
+    "description": "NCERT Class 12 Biology textbook covering advanced biological concepts and applications"
+  },
+  "plant_photosynthesis_courseware.pdf": {
+    "title": "Plant Photosynthesis Courseware",
+    "author": "CUTM",
+    "course": "Botany",
+    "subject": "Plant Physiology", 
+    "medium": "English",
+    "board": "University",
+    "grade": "Undergraduate",
+    "topics": ["photosynthesis", "light reactions", "carbon fixation", "chlorophyll", "plant metabolism"],
+    "description": "Comprehensive courseware on plant photosynthesis processes and mechanisms"
   }
 }

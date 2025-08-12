@@ -8,7 +8,6 @@ from typing import List, Dict
 import json
 import time
 import re
-from schemas.content_discovery_schema import ContentDiscoveryResponse, ContentRecommendation, ErrorResponse
 
 class ContentDiscoveryTool(BaseTool):
     """
@@ -175,12 +174,13 @@ class ContentDiscoveryTool(BaseTool):
             if not final_results:
                 error_msg = f"No relevant content found for '{query}'"
                 if self.return_json:
-                    error_response = ErrorResponse(
-                        query=query,
-                        error_code="no_results",
-                        error_message=error_msg
-                    )
-                    return json.dumps(error_response.dict(), indent=2)
+                    error_response = {
+                        "query": query,
+                        "status": "error",
+                        "error_code": "no_results",
+                        "error_message": error_msg
+                    }
+                    return json.dumps(error_response, indent=2)
                 return error_msg
 
             # Generate recommendations with ACTUAL filenames
@@ -188,19 +188,15 @@ class ContentDiscoveryTool(BaseTool):
 
             if self.return_json:
                 # Return structured JSON response
-                content_recommendations = [
-                    ContentRecommendation(**rec) for rec in recommendations_data["recommendations"]
-                ]
+                response = {
+                    "query": recommendations_data["query"],
+                    "status": "success",
+                    "total_results": recommendations_data["total_recommendations"],
+                    "recommendations": recommendations_data["recommendations"],
+                    "message": "Content discovery completed successfully"
+                }
                 
-                response = ContentDiscoveryResponse(
-                    query=recommendations_data["query"],
-                    status="success",
-                    total_results=recommendations_data["total_recommendations"],
-                    recommendations=content_recommendations,
-                    message="Content discovery completed successfully"
-                )
-                
-                return json.dumps(response.dict(), indent=2)
+                return json.dumps(response, indent=2)
             else:
                 # Return human-readable text
                 return self._create_text_response(recommendations_data)
@@ -210,11 +206,12 @@ class ContentDiscoveryTool(BaseTool):
             print(f"❌ {error_msg}")
             
             if self.return_json:
-                error_response = ErrorResponse(
-                    query=query,
-                    error_code="processing_error",
-                    error_message=error_msg
-                )
-                return json.dumps(error_response.dict(), indent=2)
+                error_response = {
+                    "query": query,
+                    "status": "error",
+                    "error_code": "processing_error",
+                    "error_message": error_msg
+                }
+                return json.dumps(error_response, indent=2)
             
             return error_msg
