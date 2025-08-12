@@ -1,6 +1,6 @@
 """
-Multi-Collection RAG System
-Supports intelligent routing between different data sources
+Updated Multi-Collection RAG System with Flexible Database Architecture
+Supports agent-specific database schemas and configurations
 """
 import config
 import argparse
@@ -10,7 +10,7 @@ from models.huggingface_llm import HuggingFaceGenerativeModel
 from models.openai_llm import OpenAIGenerativeModel
 from models.sentence_transformer import SentenceTransformerEmbeddingModel
 from models.openai_embedding import OpenAIEmbeddingModel
-from vector_db.milvus_db import MilvusVectorDB
+from vector_db.factory import VectorDBFactory
 from agents.orchestrator_agent import OrchestratorAgent
 from tools.vector_db_query import VectorDBQueryTool
 from tools.content_discovery_tool import ContentDiscoveryTool
@@ -33,19 +33,20 @@ def setup_embedding_model() -> EmbeddingModel:
         return SentenceTransformerEmbeddingModel(model_name=config.MODEL_CONFIG["local"]["embedding_model"])
 
 def create_query_tools(llm: GenerativeModel, embedding_model: EmbeddingModel, json_output: bool = False) -> list:
-    """Create vector DB query tools for each data source"""
+    """Create vector DB query tools using the new factory pattern"""
     tools = []
     
-    for agent_name, agent_config in config.AGENT_CONFIGS.items():
-        # Create separate vector DB for each collection
-        vector_db = MilvusVectorDB(
+    for agent_name, agent_config in config.AGENT_CONFIGS_V2.items():
+        # Create appropriate vector DB using factory
+        vector_db = VectorDBFactory.create_db(
+            agent_type=agent_name,
             db_path=config.DB_PATH,
             collection_name=agent_config["collection_name"], 
             top_k=config.TOP_K
         )
         
         # Create appropriate tool based on agent type
-        if agent_name == "content_discovery_agent":
+        if agent_name in ["content_discovery_agent", "educational_content_agent"]:
             tool = ContentDiscoveryTool(
                 db=vector_db,
                 embedding_model=embedding_model,
@@ -56,7 +57,6 @@ def create_query_tools(llm: GenerativeModel, embedding_model: EmbeddingModel, js
                 return_json=json_output
             )
         else:
-            # Regular VectorDBQueryTool for other agents
             tool = VectorDBQueryTool(
                 db=vector_db,
                 embedding_model=embedding_model,
@@ -71,33 +71,39 @@ def create_query_tools(llm: GenerativeModel, embedding_model: EmbeddingModel, js
     return tools
 
 def load_data_to_collection(agent_name: str, embedding_model: EmbeddingModel):
-    """Load data into a specific collection"""
-    if agent_name not in config.AGENT_CONFIGS:
+    """Load data into a specific collection using new architecture"""
+    if agent_name not in config.AGENT_CONFIGS_V2:
         print(f"❌ Error: Agent '{agent_name}' not found in configuration")
-        print(f"📚 Available agents: {', '.join(config.AGENT_CONFIGS.keys())}")
+        print(f"📚 Available agents: {', '.join(config.AGENT_CONFIGS_V2.keys())}")
         return
         
-    agent_config = config.AGENT_CONFIGS[agent_name]
+    agent_config = config.AGENT_CONFIGS_V2[agent_name]
     
     print(f"📥 Loading data for '{agent_config['name']}'...")
     
-    # Create vector DB for this collection
-    vector_db = MilvusVectorDB(
+    # Create vector DB using factory
+    vector_db = VectorDBFactory.create_db(
+        agent_type=agent_name,
         db_path=config.DB_PATH,
         collection_name=agent_config["collection_name"],
         top_k=config.TOP_K
     )
     
-    # Setup the collection (this will recreate if exists)
+    # Setup the collection
     vector_db.setup(dimension=embedding_model.get_embedding_dimension())
     
     # Parse the data based on file type
+    metadata = None
     if agent_config["parser"] == "pdf":
         parser = PDFParser(chunk_size=config.CHUNK_SIZE, chunk_overlap=config.CHUNK_OVERLAP)
-        chunks = parser.parse_pdf(agent_config["path"])
+        chunks, metadata = parser.parse_pdf(agent_config["path"])
     elif agent_config["parser"] == "txt":
         parser = TextParser(chunk_size=config.CHUNK_SIZE, chunk_overlap=config.CHUNK_OVERLAP)
         chunks = parser.parse_txt(agent_config["path"])
+        # Generate basic metadata for txt files
+        import os
+        filename = os.path.basename(agent_config["path"])
+        metadata = [{"filename": filename, "page": i+1} for i in range(len(chunks))]
     elif agent_config["parser"] == "pdf_with_metadata":
         parser = EducationalContentParser(chunk_size=config.CHUNK_SIZE, chunk_overlap=config.CHUNK_OVERLAP)
         chunks, metadata = parser.parse_educational_content(
@@ -115,73 +121,57 @@ def load_data_to_collection(agent_name: str, embedding_model: EmbeddingModel):
     print("🔄 Creating embeddings...")
     embeddings = embedding_model.create_embedding(chunks)
     
-    # Insert into vector DB
+    # Insert into vector DB with metadata if required
     print("💾 Inserting into vector database...")
-    vector_db.insert(data=chunks, embeddings=embeddings)
+    db_config = agent_config.get("db_config", {})
+    if db_config.get("metadata_required", False) and metadata:
+        vector_db.insert(data=chunks, embeddings=embeddings, metadata=metadata)
+    else:
+        vector_db.insert(data=chunks, embeddings=embeddings)
     
-    print(f"✅ Successfully loaded {len(chunks)} chunks into '{agent_config['name']}' collection!")
+    print(f"✅ Successfully loaded {len(chunks)} chunks for '{agent_config['name']}'")
 
 def main():
-    """Main application entry point"""
-    parser = argparse.ArgumentParser(description="🚀 Multi-Collection RAG System")
-    parser.add_argument("--load", type=str, help="Load data for specific agent (pdf_agent, video_agent)")
-    parser.add_argument("--query", type=str, help="Ask a question to the RAG system") 
-    parser.add_argument("--list", action="store_true", help="List available data sources")
-    parser.add_argument("--json", action="store_true", help="Return response in JSON format (for Content Discovery agent)")
+    parser = argparse.ArgumentParser(description="Multi-Collection RAG System")
+    parser.add_argument("--load-data", help="Load data for a specific agent", type=str)
+    parser.add_argument("--query", help="Query the system", type=str)
+    parser.add_argument("--json", help="Return JSON response", action="store_true")
+    parser.add_argument("--architecture", help="Show new architecture info", action="store_true")
     
     args = parser.parse_args()
     
-    # List available data sources
-    if args.list:
-        print("📚 Available Data Sources:")
-        for agent_name, agent_config in config.AGENT_CONFIGS.items():
-            print(f"  • {agent_name}: {agent_config['name']} - {agent_config['description']}")
+    if args.architecture:
+        print("🏗️  **NexusRAG Database Architecture**")
+        print("\n📊 **Supported Agent Types:**")
+        for agent_type in VectorDBFactory.get_supported_agents():
+            schema = VectorDBFactory.AGENT_SCHEMAS.get(agent_type, {})
+            print(f"   • {agent_type}: {list(schema.keys()) if schema else 'No metadata'}")
+        
+        print("\n📁 **Available Configurations:**")
+        for agent_name, agent_config in config.AGENT_CONFIGS_V2.items():
+            db_type = agent_config["db_config"]["db_type"]
+            print(f"   • {agent_name}: Uses {db_type} database")
         return
     
     # Setup models
-    print("🔧 Setting up models...")
     llm = setup_llm()
     embedding_model = setup_embedding_model()
     
-    # Load data into specific collection
-    if args.load:
-        load_data_to_collection(args.load, embedding_model)
-        return
-    
-    # Query the system
-    if args.query:
-        print("🎯 Setting up query tools...")
-        query_tools = create_query_tools(llm, embedding_model, json_output=args.json)
+    if args.load_data:
+        load_data_to_collection(args.load_data, embedding_model)
+    elif args.query:
+        tools = create_query_tools(llm, embedding_model, json_output=args.json)
         
-        print("🤖 Initializing orchestrator...")
-        orchestrator = OrchestratorAgent(llm=llm, tools=query_tools)
+        # Create orchestrator agent
+        orchestrator = OrchestratorAgent(
+            llm=llm,
+            tools=tools
+        )
         
-        print(f"❓ Processing query: '{args.query}'")
         result = orchestrator.run(args.query)
-        
-        if args.json:
-            # For JSON output, just print the result directly (it's already JSON)
-            print(result)
-        else:
-            # For regular output, format nicely
-            print("\n" + "="*50)
-            print("🎉 FINAL ANSWER:")
-            print("="*50)
-            print(result)
-        return
-    
-    # Show help if no arguments
-    print("🔍 Multi-Collection RAG System")
-    print("\nUsage:")
-    print("  --list                    List available data sources")
-    print("  --load pdf_agent          Load PDF documents")
-    print("  --load video_agent        Load video transcripts") 
-    print("  --query 'your question'   Ask a question")
-    print("  --json                    Return JSON response (Content Discovery)")
-    print("\nExample:")
-    print("  python app.py --load pdf_agent")
-    print("  python app.py --query 'What are the key metrics in the report?'")
-    print("  python app.py --query 'I want to learn about photosynthesis' --json")
+        print(result)
+    else:
+        parser.print_help()
 
 if __name__ == "__main__":
     main()

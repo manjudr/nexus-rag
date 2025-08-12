@@ -17,11 +17,18 @@ class VectorDBQueryTool(BaseTool):
     def _initialize_bm25(self):
         if isinstance(self.db, MilvusVectorDB):
             print(f"Tool ({self.name}): Initializing BM25...")
-            documents = self.db.get_all_documents()
-            if not documents:
+            documents_data = self.db.get_all_documents()
+            if not documents_data:
                 return None, None
+            # Extract text content for BM25, handling both old and new formats
+            documents = []
+            for doc in documents_data:
+                if isinstance(doc, tuple):
+                    documents.append(doc[0])  # Text is first element
+                else:
+                    documents.append(doc)
             tokenized_corpus = [doc.split(" ") for doc in documents]
-            return BM25Okapi(tokenized_corpus), documents
+            return BM25Okapi(tokenized_corpus), documents_data
         return None, None
 
     def _create_response_prompt(self, query: str, context_chunks: list) -> str:
@@ -41,7 +48,7 @@ Answer the question using the information provided above. Be specific and detail
 
     def run(self, query: str):
         """Runs the tool to query the vector DB and generate a response."""
-        bm25, documents = self._initialize_bm25()
+        bm25, documents_data = self._initialize_bm25()
 
         print(f"Tool ({self.name}): Creating embedding for query: '{query}'")
         query_embedding = self.embedding_model.create_embedding(query)
@@ -49,15 +56,29 @@ Answer the question using the information provided above. Be specific and detail
         print(f"Tool ({self.name}): Querying Vector DB...")
         vector_results = self.db.search(query_embedding, top_k=self.top_k)
 
-        # Get relevant context chunks
-        context_chunks = vector_results
-        if bm25 and documents:
+        # Extract text content from results (handle both old and new format)
+        context_chunks = []
+        for result in vector_results:
+            if isinstance(result, tuple):
+                context_chunks.append(result[0])  # Text is first element
+            else:
+                context_chunks.append(result)
+        
+        if bm25 and documents_data:
             print(f"Tool ({self.name}): Performing BM25 search...")
             tokenized_query = query.split(" ")
-            bm25_results = bm25.get_top_n(tokenized_query, documents, n=self.top_k)
+            # Get text documents for BM25
+            text_documents = []
+            for doc in documents_data:
+                if isinstance(doc, tuple):
+                    text_documents.append(doc[0])
+                else:
+                    text_documents.append(doc)
+            
+            bm25_results = bm25.get_top_n(tokenized_query, text_documents, n=self.top_k)
             
             # Combine and deduplicate results
-            combined_results = list(set(vector_results + bm25_results))
+            combined_results = list(set(context_chunks + bm25_results))
             context_chunks = combined_results
 
         if not context_chunks:

@@ -5,14 +5,27 @@ class PDFParser:
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
 
-    def parse_pdf(self, pdf_path: str) -> list[str]:
-        """Parse PDF and return list of text chunks."""
+    def parse_pdf(self, pdf_path: str) -> tuple[list[str], list[dict]]:
+        """Parse PDF and return list of text chunks with metadata."""
+        import os
+        
         # Extract text from PDF
         text = self._extract_text_from_pdf(pdf_path)
         
         # Chunk the text
         chunks = self._chunk_text(text)
-        return chunks
+        
+        # Create metadata for each chunk
+        filename = os.path.basename(pdf_path)
+        metadata = []
+        for i, chunk in enumerate(chunks):
+            metadata.append({
+                "filename": filename,
+                "page": i + 1,  # Approximate page number
+                "source_path": pdf_path
+            })
+        
+        return chunks, metadata
 
     def _extract_text_from_pdf(self, pdf_path: str) -> str:
         """Extract text from PDF file."""

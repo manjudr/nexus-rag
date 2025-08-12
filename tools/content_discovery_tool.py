@@ -1,9 +1,9 @@
 from tools.base import BaseTool
 from vector_db.base import BaseVectorDB
+from vector_db.content_discovery_db import ContentDiscoveryVectorDB
 from models.embedding import EmbeddingModel
 from models.llm import GenerativeModel
 from rank_bm25 import BM25Okapi
-from vector_db.milvus_db import MilvusVectorDB
 from typing import List, Dict
 import json
 import time
@@ -11,8 +11,13 @@ import re
 from schemas.content_discovery_schema import ContentDiscoveryResponse, ContentRecommendation, ErrorResponse
 
 class ContentDiscoveryTool(BaseTool):
+    """
+    Updated Content Discovery Tool that works with the new database architecture
+    Returns actual filenames from the database instead of generating fictional ones
+    """
+    
     def __init__(self, db: BaseVectorDB, embedding_model: EmbeddingModel, llm: GenerativeModel, 
-                 name: str, description: str, top_k: int = 5, return_json: bool = False, metadata_store: Dict = None):
+                 name: str, description: str, top_k: int = 5, return_json: bool = False):
         self.db = db
         self.embedding_model = embedding_model
         self.llm = llm
@@ -20,265 +25,196 @@ class ContentDiscoveryTool(BaseTool):
         self.description = description
         self.top_k = top_k
         self.return_json = return_json
-        self.metadata_store = metadata_store or {}  # Store for chunk metadata
 
     def _initialize_bm25(self):
-        if isinstance(self.db, MilvusVectorDB):
+        if isinstance(self.db, ContentDiscoveryVectorDB):
             print(f"Tool ({self.name}): Initializing BM25...")
-            documents = self.db.get_all_documents()
-            if not documents:
+            documents_data = self.db.get_all_documents()
+            if not documents_data:
                 return None, None
+            # Extract just the content for BM25
+            documents = [doc["content"] for doc in documents_data]
             tokenized_corpus = [doc.split(" ") for doc in documents]
-            return BM25Okapi(tokenized_corpus), documents
+            return BM25Okapi(tokenized_corpus), documents_data
         return None, None
 
-    def _extract_metadata_from_chunk(self, chunk: str, chunk_index: int) -> Dict:
-        """Extract metadata from chunk content using simple, universal patterns."""
+    def _extract_keywords_from_content(self, content: str, count: int = 8) -> List[str]:
+        """Extract meaningful keywords from content."""
         import re
         from collections import Counter
         
-        # Initialize with defaults
-        title = "Educational Content"
-        author = "Unknown Author"
-        course = "General Studies"
-        section = "Content"
-        page_number = 1
+        # Remove special characters and split into words
+        words = re.findall(r'\b[a-zA-Z]{3,}\b', content.lower())
         
-        # Try to extract title from chunk content
-        lines = chunk.strip().split('\n')
-        first_line = lines[0] if lines else ""
-        
-        # Extract title from first line if it looks like a title
-        if first_line and len(first_line) < 100:  # Reasonable title length
-            if first_line.isupper() or first_line.istitle():
-                title = first_line
-            elif any(first_line.startswith(prefix) for prefix in ["Chapter", "Section", "Unit", "Lesson"]):
-                section = first_line
-                # Look for title in next line
-                if len(lines) > 1 and len(lines[1]) > 5:
-                    title = lines[1]
-        
-        # Extract chapter/page information
-        chapter_match = re.search(r'chapter\s+(\d+)', chunk.lower())
-        if chapter_match:
-            page_number = int(chapter_match.group(1))
-            section = f"Chapter {page_number}"
-        
-        # Extract keywords without any predefined categories
-        # Just find the most meaningful words in the content
-        words = re.findall(r'\b[A-Za-z]{3,}\b', chunk)
-        
-        # Simple stopword removal - basic English stopwords
-        stopwords = {
+        # Filter out common stop words
+        stop_words = {
             'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
-            'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does',
-            'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can',
-            'this', 'that', 'these', 'those', 'they', 'them', 'their', 'there', 'then',
-            'than', 'when', 'where', 'why', 'how', 'what', 'who', 'which', 'whom', 'whose',
-            'all', 'any', 'some', 'many', 'much', 'more', 'most', 'other', 'another',
-            'such', 'only', 'own', 'same', 'so', 'very', 'just', 'now', 'here', 'way',
-            'get', 'got', 'make', 'made', 'take', 'took', 'come', 'came', 'go', 'went',
-            'see', 'saw', 'know', 'knew', 'think', 'say', 'said', 'tell', 'told', 'ask',
-            'work', 'use', 'used', 'find', 'give', 'gave', 'turn', 'put', 'end', 'why',
-            'try', 'call', 'move', 'live', 'seem', 'feel', 'leave', 'hand', 'high',
-            'every', 'right', 'still', 'old', 'great', 'last', 'long', 'good', 'new',
-            'first', 'little', 'own', 'other', 'many', 'where', 'much', 'before', 'here',
-            'through', 'when', 'where', 'why', 'how', 'all', 'any', 'both', 'each',
-            'few', 'more', 'most', 'other', 'some', 'such', 'only', 'than', 'too', 'very'
+            'this', 'that', 'these', 'those', 'a', 'an', 'is', 'are', 'was', 'were', 'be',
+            'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would',
+            'could', 'should', 'may', 'might', 'can', 'must', 'shall', 'about', 'into',
+            'through', 'during', 'before', 'after', 'above', 'below', 'up', 'down', 'out',
+            'off', 'over', 'under', 'again', 'further', 'then', 'once'
         }
         
-        # Filter meaningful words
-        meaningful_words = [
-            word.lower() for word in words 
-            if (word.lower() not in stopwords and 
-                len(word) > 2 and 
-                word.isalpha() and
-                not word.isdigit())
-        ]
+        meaningful_words = [word for word in words if word not in stop_words and len(word) > 3]
         
-        # Get top keywords by frequency
+        # Count word frequency and return top keywords
         word_counts = Counter(meaningful_words)
-        keywords = [word for word, count in word_counts.most_common(8)]
+        keywords = [word for word, count in word_counts.most_common(count)]
         
-        # Generate course name from content context (no hardcoded subjects)
-        if keywords:
-            # Use most frequent keyword as basis for course name
-            primary_topic = keywords[0].title()
-            course = f"{primary_topic} Studies"
-        
-        # Generate filename from primary keyword
-        primary_word = keywords[0] if keywords else f"content_{chunk_index + 1}"
-        filename = f"{primary_word}_{chunk_index + 1}.pdf"
-        
-        return {
-            "filename": filename,
-            "title": title,
-            "author": author,
-            "course": course,
-            "page_number": page_number,
-            "section": section,
-            "keywords": keywords
-        }
+        return keywords
 
-    def _get_content_recommendations(self, query: str, results: List[str]) -> Dict:
-        """Generate content recommendations with metadata in JSON format."""
+    def _get_content_recommendations(self, query: str, results: List[Dict]) -> Dict:
+        """Generate content recommendations with actual database metadata."""
         recommendations = []
         seen_files = set()
         
-        for i, chunk in enumerate(results[:self.top_k]):
-            # Dynamically extract metadata from chunk content
-            metadata = self._extract_metadata_from_chunk(chunk, i)
+        for i, result in enumerate(results[:self.top_k]):
+            content = result["content"]
+            filename = result["filename"]
+            page = result["page"]
+            
+            # Extract keywords from content
+            keywords = self._extract_keywords_from_content(content)
             
             # Extract keywords that match the query
             query_lower = query.lower()
             query_words = set(query_lower.split())
-            matched_keywords = [kw for kw in metadata["keywords"] if any(qw in kw for qw in query_words)]
+            matched_keywords = [kw for kw in keywords if any(qw in kw for qw in query_words)]
             
             # If no query-specific keywords found, use general keywords from content
             if not matched_keywords:
-                matched_keywords = metadata["keywords"][:5]  # Top 5 keywords
+                matched_keywords = keywords[:5]  # Top 5 keywords
             
-            file_key = f"{metadata['filename']}_page_{metadata['page_number']}"
+            file_key = f"{filename}_page_{page}"
             if file_key not in seen_files:
                 seen_files.add(file_key)
                 
-                summary = chunk[:200] + "..." if len(chunk) > 200 else chunk.strip()
+                summary = content[:200] + "..." if len(content) > 200 else content.strip()
+                
+                # Generate title from filename
+                title = filename.replace('.pdf', '').replace('_', ' ').title()
+                
+                # Generate course from keywords
+                course = f"{matched_keywords[0].title()} Studies" if matched_keywords else "General Studies"
                 
                 recommendation = {
-                    "filename": metadata["filename"],
-                    "title": metadata["title"],
-                    "author": metadata["author"],
-                    "course": metadata["course"],
-                    "page_number": metadata["page_number"],
-                    "section": metadata["section"],
+                    "filename": filename,  # ACTUAL filename from database
+                    "title": title,
+                    "author": "Document Author",  # Could be enhanced with metadata extraction
+                    "course": course,
+                    "page_number": page,
+                    "section": f"Page {page}",
+                    "keywords": matched_keywords,
                     "summary": summary,
-                    "relevance_score": round((self.top_k - i) / self.top_k, 2),
-                    "keywords": matched_keywords if matched_keywords else None
+                    "relevance_score": round(1.0 - (i * 0.1), 2)  # Decreasing relevance
                 }
                 recommendations.append(recommendation)
         
         return {
+            "total_recommendations": len(recommendations),
+            "query": query,
             "recommendations": recommendations,
-            "total_results": len(recommendations)
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
         }
 
-    def _format_recommendations(self, query: str, recommendations: List[Dict]) -> str:
-        """Format recommendations into a readable response."""
-        if not recommendations:
-            return f"I couldn't find any educational content related to '{query}'. Try searching with different keywords."
+    def _create_text_response(self, recommendations_data: Dict) -> str:
+        """Create human-readable text response"""
+        query = recommendations_data["query"]
+        recommendations = recommendations_data["recommendations"]
+        total = recommendations_data["total_recommendations"]
         
-        response = f"📚 **Content Recommendations for: '{query}'**\n\n"
-        response += f"Found {len(recommendations)} relevant PDF(s) with content matching your search:\n\n"
+        if not recommendations:
+            return f"I couldn't find any relevant content for '{query}'. Please try a different search term."
+        
+        response = f"🔍 **Content Discovery Results for: '{query}'**\n\n"
+        response += f"Found {total} relevant educational resources:\n\n"
         
         for i, rec in enumerate(recommendations, 1):
             response += f"**{i}. {rec['title']}**\n"
-            response += f"   📄 File: {rec['filename']}\n"
-            response += f"   👨‍🏫 Author: {rec['author']}\n"
-            response += f"   📖 Course: {rec['course']}\n"
-            response += f"   📄 Page: {rec['page_number']}\n"
-            response += f"   📑 Section: {rec['section']}\n"
-            response += f"   ⭐ Relevance: {rec['relevance_score']}\n"
-            response += f"   📝 Summary: {rec['summary']}\n\n"
-        
-        response += "💡 **Tip**: You can ask specific questions about any of these PDFs for more detailed information."
+            response += f"   📄 File: {rec['filename']} (Page {rec['page_number']})\n"  # REAL filename!
+            response += f"   📚 Course: {rec['course']}\n"
+            response += f"   🏷️  Keywords: {', '.join(rec['keywords'][:5])}\n"
+            response += f"   📝 Summary: {rec['summary']}\n"
+            response += f"   ⭐ Relevance: {rec['relevance_score']}\n\n"
         
         return response
 
-    def _format_recommendations_text(self, response: Dict) -> str:
-        """Format JSON response into readable text for backward compatibility."""
-        if response["status"] != "success" or response["total_results"] == 0:
-            return response.get("error_message", "No content found.")
-        
-        text_response = f"📚 **Content Recommendations for: '{response['query']}'**\n\n"
-        text_response += f"Found {response['total_results']} relevant PDF(s) with content matching your search:\n\n"
-        
-        for i, rec in enumerate(response["recommendations"], 1):
-            text_response += f"**{i}. {rec['title']}**\n"
-            text_response += f"   📄 File: {rec['filename']}\n"
-            text_response += f"   👨‍🏫 Author: {rec['author']}\n"
-            text_response += f"   📖 Course: {rec['course']}\n"
-            text_response += f"   📄 Page: {rec['page_number']}\n"
-            text_response += f"   📑 Section: {rec['section']}\n"
-            text_response += f"   ⭐ Relevance: {rec['relevance_score']}\n"
-            if rec.get('keywords'):
-                text_response += f"   🏷️ Keywords: {', '.join(rec['keywords'])}\n"
-            text_response += f"   📝 Summary: {rec['summary']}\n\n"
-        
-        text_response += f"💡 **Tip**: {response['message']}\n"
-        text_response += f"⏱️ Processing time: {response['processing_time_ms']}ms"
-        
-        return text_response
-
     def run(self, query: str):
-        """Find and recommend educational content based on the query."""
-        start_time = time.time()
-        
+        """Run content discovery with actual database filenames"""
         try:
-            bm25, documents = self._initialize_bm25()
+            bm25, documents_data = self._initialize_bm25()
 
             print(f"Tool ({self.name}): Creating embedding for query: '{query}'")
             query_embedding = self.embedding_model.create_embedding(query)
             
-            print(f"Tool ({self.name}): Searching educational content...")
+            print(f"Tool ({self.name}): Searching content database...")
             vector_results = self.db.search(query_embedding, top_k=self.top_k)
 
-            # Get relevant context chunks
-            context_chunks = vector_results
-            if bm25 and documents:
-                print(f"Tool ({self.name}): Performing keyword search...")
+            # Use vector results directly (they already have the right format)
+            final_results = vector_results
+            
+            # Optionally enhance with BM25 if available
+            if bm25 and documents_data:
+                print(f"Tool ({self.name}): Enhancing with BM25 search...")
                 tokenized_query = query.split(" ")
-                bm25_results = bm25.get_top_n(tokenized_query, documents, n=self.top_k)
+                bm25_scores = bm25.get_scores(tokenized_query)
                 
-                # Combine and deduplicate results
-                combined_results = list(set(vector_results + bm25_results))
-                context_chunks = combined_results
+                # Get top BM25 results
+                top_bm25_indices = sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)[:self.top_k]
+                bm25_results = [documents_data[i] for i in top_bm25_indices]
+                
+                # Combine results (prioritize vector search)
+                combined_results = vector_results.copy()
+                for bm25_result in bm25_results:
+                    if bm25_result not in combined_results:
+                        combined_results.append(bm25_result)
+                
+                final_results = combined_results[:self.top_k]
 
-            if not context_chunks:
-                error_response = {
-                    "query": query,
-                    "status": "error",
-                    "error_code": "NO_CONTENT_FOUND",
-                    "error_message": f"No educational content found related to '{query}'. Try searching with different keywords.",
-                    "total_results": 0,
-                    "recommendations": []
-                }
+            if not final_results:
+                error_msg = f"No relevant content found for '{query}'"
                 if self.return_json:
-                    return json.dumps(error_response, indent=2)
-                else:
-                    return error_response["error_message"]
+                    error_response = ErrorResponse(
+                        query=query,
+                        error_code="no_results",
+                        error_message=error_msg
+                    )
+                    return json.dumps(error_response.dict(), indent=2)
+                return error_msg
 
-            # Generate content recommendations
-            print(f"Tool ({self.name}): Generating content recommendations...")
-            recommendations_data = self._get_content_recommendations(query, context_chunks)
-            
-            processing_time = (time.time() - start_time) * 1000  # Convert to milliseconds
-            
-            # Create structured response
-            response = {
-                "query": query,
-                "status": "success",
-                "total_results": recommendations_data["total_results"],
-                "recommendations": recommendations_data["recommendations"],
-                "message": f"Found {recommendations_data['total_results']} relevant content(s) matching your search. You can ask specific questions about any of these topics for more details.",
-                "processing_time_ms": round(processing_time, 2)
-            }
-            
+            # Generate recommendations with ACTUAL filenames
+            recommendations_data = self._get_content_recommendations(query, final_results)
+
             if self.return_json:
-                return json.dumps(response, indent=2)
-            else:
-                # Return formatted text for backward compatibility
-                return self._format_recommendations_text(response)
+                # Return structured JSON response
+                content_recommendations = [
+                    ContentRecommendation(**rec) for rec in recommendations_data["recommendations"]
+                ]
                 
-        except Exception as e:
-            error_response = {
-                "query": query,
-                "status": "error",
-                "error_code": "PROCESSING_ERROR",
-                "error_message": f"Error processing query: {str(e)}",
-                "total_results": 0,
-                "recommendations": []
-            }
-            if self.return_json:
-                return json.dumps(error_response, indent=2)
+                response = ContentDiscoveryResponse(
+                    query=recommendations_data["query"],
+                    status="success",
+                    total_results=recommendations_data["total_recommendations"],
+                    recommendations=content_recommendations,
+                    message="Content discovery completed successfully"
+                )
+                
+                return json.dumps(response.dict(), indent=2)
             else:
-                return error_response["error_message"]
+                # Return human-readable text
+                return self._create_text_response(recommendations_data)
+
+        except Exception as e:
+            error_msg = f"Error in content discovery: {str(e)}"
+            print(f"❌ {error_msg}")
+            
+            if self.return_json:
+                error_response = ErrorResponse(
+                    query=query,
+                    error_code="processing_error",
+                    error_message=error_msg
+                )
+                return json.dumps(error_response.dict(), indent=2)
+            
+            return error_msg

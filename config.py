@@ -1,7 +1,4 @@
-"""
-Multi-Collection RAG Configuration
-Supports multiple data sources with intelligent routing
-"""
+# Database Configuration with Agent-Specific Settings
 
 # Global Settings
 DB_PATH = "milvus_demo.db"
@@ -22,32 +19,63 @@ MODEL_CONFIG = {
     }
 }
 
-# Data Source Configurations (Each acts like a separate "table")
-AGENT_CONFIGS = {
-    "video_agent": {
-        "name": "Video Transcripts", 
-        "path": "data/video_transcript.txt",
-        "collection_name": "video_transcripts",
-        "parser": "txt",
-        "description": "Use this for questions about video content, transcripts, spoken content, interviews, and audio-visual material.",
-        "keywords": ["video", "transcript", "interview", "spoken", "audio", "visual", "recording"]
-    },
-    "content_discovery_agent": {
-        "name": "Content Discovery",
-        "path": "data/educational_content/",
-        "collection_name": "educational_content",
-        "parser": "pdf_with_metadata",
-        "description": "Use this to find and recommend educational content across multiple PDFs. Can search by topic, subject, course, board, etc. and provide page numbers and summaries.",
-        "keywords": ["learn", "study", "course", "subject", "education", "find content", "recommend", "page", "which pdf", "document", "pdf", "file"]
-    }
-    # Easy to add more: website_agent, email_agent, etc.
-}
-
-# Educational Content Configuration
+# Educational Content Configuration (for multi-PDF loading)
 EDUCATIONAL_CONTENT_CONFIG = {
     "content_directory": "data/educational_content/",
-    "metadata_file": "data/educational_content/metadata.json",
-    "supported_formats": [".pdf"],
-    "extract_page_numbers": True,
-    "generate_summaries": True
+    "metadata_file": "data/educational_content/metadata.json"
+}
+
+DATABASE_CONFIG = {
+    "content_discovery_agent": {
+        "db_type": "content_discovery",  # Uses ContentDiscoveryVectorDB
+        "metadata_required": True,
+        "schema": {
+            "filename": str,
+            "page": int,
+            "title": str,
+            "author": str
+        }
+    },
+    "general_query_agent": {
+        "db_type": "basic",  # Uses basic MilvusVectorDB
+        "metadata_required": False,
+        "schema": {}
+    },
+    "image_analysis_agent": {
+        "db_type": "flexible",  # Uses FlexibleMilvusDB
+        "metadata_required": True,
+        "schema": {
+            "image_path": str,
+            "image_type": str,
+            "dimensions": str
+        }
+    }
+}
+
+# Updated Agent Configuration
+AGENT_CONFIGS_V2 = {
+    "educational_content_agent": {
+        "name": "Content Discovery Agent",
+        "collection_name": "educational_content",
+        "path": "data/educational_content/",
+        "parser": "pdf_with_metadata",
+        "description": "Discovers educational content from multiple subject files with rich metadata",
+        "db_config": DATABASE_CONFIG["content_discovery_agent"]
+    },
+    "content_discovery_agent": {
+        "name": "Basic Content Discovery Agent",
+        "collection_name": "content_discovery",
+        "path": "data/obsrv.pdf",
+        "parser": "pdf",
+        "description": "Discovers and recommends content from basic PDF files",
+        "db_config": DATABASE_CONFIG["content_discovery_agent"]
+    },
+    "general_query_agent": {
+        "name": "General Query Agent", 
+        "collection_name": "general_content",
+        "path": "data/obsrv.pdf",
+        "parser": "pdf",
+        "description": "Answers general questions about the uploaded content",
+        "db_config": DATABASE_CONFIG["general_query_agent"]
+    }
 }
