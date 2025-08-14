@@ -47,7 +47,15 @@ class HybridEducationalEnhancer:
             api_key: Optional API key for cloud models
         """
         self.use_langextract = use_langextract and LANGEXTRACT_AVAILABLE
-        self.api_key = api_key or os.environ.get('LANGEXTRACT_API_KEY')
+        
+        # Check for various API key sources for LangExtract
+        self.api_key = (
+            api_key or 
+            os.environ.get('LANGEXTRACT_API_KEY') or
+            os.environ.get('GOOGLE_API_KEY') or
+            os.environ.get('GEMINI_API_KEY') or
+            os.environ.get('OPENAI_API_KEY')  # Use Azure OpenAI key for LangExtract
+        )
         
         # Pattern-based extraction patterns
         self.patterns = {
@@ -107,8 +115,62 @@ class HybridEducationalEnhancer:
         return self._enhance_with_patterns(content, filename)
     
     def _enhance_with_langextract(self, content: str, filename: str) -> EnhancedEducationalMetadata:
-        """Enhance using LangExtract (requires API key)"""
+        """Enhance using LangExtract (requires API key) or Azure OpenAI direct"""
         
+        print("🤖 Attempting enhanced extraction with Azure OpenAI...")
+        
+        # Try direct Azure OpenAI call if LangExtract fails
+        try:
+            from models.openai_llm import OpenAIGenerativeModel
+            
+            llm = OpenAIGenerativeModel('gpt-35-turbo')
+            
+            prompt = f"""
+            You are an educational content analyzer. Extract educational metadata from the following content and return a properly formatted JSON object.
+
+            Content:
+            {content[:2000]}  # Limit content length for better processing
+            
+            Extract the following and return ONLY a valid JSON object with no additional text:
+            {{
+                "learning_objectives": ["objective1", "objective2"],
+                "key_concepts": ["concept1", "concept2"],
+                "prerequisites": ["prereq1", "prereq2"],
+                "study_questions": ["question1", "question2"],
+                "examples": ["example1", "example2"],
+                "difficulty_level": "beginner"
+            }}
+            """
+            
+            response = llm.generate(prompt)
+            
+            # Parse the JSON response
+            import json
+            try:
+                extracted_data = json.loads(response)
+                
+                # Convert to our format
+                metadata = EnhancedEducationalMetadata(
+                    learning_objectives=[{"text": obj, "type": "ai_extracted"} for obj in extracted_data.get("learning_objectives", [])],
+                    key_concepts=[{"text": concept, "importance": "medium"} for concept in extracted_data.get("key_concepts", [])],
+                    difficulty_level=extracted_data.get("difficulty_level", "intermediate"),
+                    prerequisites=[{"text": prereq, "type": "ai_extracted"} for prereq in extracted_data.get("prerequisites", [])],
+                    study_questions=[{"text": q, "type": "ai_extracted"} for q in extracted_data.get("study_questions", [])],
+                    examples=[{"text": ex, "type": "ai_extracted"} for ex in extracted_data.get("examples", [])],
+                    content_sections=[],
+                    extraction_method="azure_openai_direct"
+                )
+                
+                print(f"✅ Azure OpenAI extracted: {len(metadata.learning_objectives)} objectives, {len(metadata.key_concepts)} concepts")
+                return metadata
+                
+            except json.JSONDecodeError:
+                print("⚠️ Failed to parse Azure OpenAI JSON response, trying pattern extraction")
+                
+        except Exception as e:
+            print(f"⚠️ Azure OpenAI direct extraction failed: {str(e)}, trying LangExtract...")
+        
+        # Original LangExtract attempt (keeping as fallback)
         educational_prompt = textwrap.dedent("""\
             Extract educational metadata from this content including:
             - Learning objectives and what students will learn
@@ -137,14 +199,41 @@ class HybridEducationalEnhancer:
             )
         ]
         
-        # Run LangExtract
-        result = lx.extract(
-            text_or_documents=content,
-            prompt_description=educational_prompt,
-            examples=examples,
-            model_id="gemini-2.0-flash-exp",
-            api_key=self.api_key
-        )
+        # Create Azure OpenAI client manually for LangExtract
+        import openai
+        azure_endpoint = os.environ.get('AZURE_OPENAI_ENDPOINT')
+        deployment_name = os.environ.get('AZURE_CHAT_DEPLOYMENT', 'gpt-35-turbo')
+        
+        if azure_endpoint and deployment_name:
+            # Try Azure OpenAI with LangExtract
+            base_url = f"{azure_endpoint.rstrip('/')}/openai/deployments/{deployment_name}/"
+            
+            result = lx.extract(
+                text_or_documents=content,
+                prompt_description=educational_prompt,
+                examples=examples,
+                language_model_type=lx.inference.OpenAILanguageModel,  # Pass the class, not instance
+                model_id=deployment_name,
+                api_key=self.api_key,
+                fence_output=True,  # Required for OpenAI models
+                use_schema_constraints=False,  # Required for OpenAI models
+                language_model_params={
+                    "base_url": base_url,
+                    "api-version": "2024-02-15-preview"
+                }
+            )
+        else:
+            # Fallback to regular OpenAI
+            result = lx.extract(
+                text_or_documents=content,
+                prompt_description=educational_prompt,
+                examples=examples,
+                model_id="gpt-3.5-turbo",  # Use standard OpenAI model
+                api_key=self.api_key,
+                language_model_type=lx.inference.OpenAILanguageModel,
+                fence_output=True,
+                use_schema_constraints=False,
+            )
         
         return self._process_langextract_result(result, filename)
     

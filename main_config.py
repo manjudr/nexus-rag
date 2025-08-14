@@ -18,7 +18,7 @@ METADATA_FILE = "data/educational_content/metadata.json"
 # =============================================================================
 # MODEL CONFIGURATION (Unified for all components)
 # =============================================================================
-# Choose one provider: "local" (free, offline) or "cloud" (requires API keys)
+# Choose one provider: "local" (free, offline) or "azure" (Azure OpenAI with OpenAI-compatible API)
 MODEL_PROVIDER = "local"
 
 # Model definitions for each provider
@@ -28,11 +28,14 @@ MODELS = {
         "llm": "google/flan-t5-base",
         "langextract_enabled": False  # LangExtract requires API keys
     },
-    "cloud": {
-        "embedding": "text-embedding-3-small",
-        "llm": "gpt-3.5-turbo", 
-        "langextract_enabled": True,
+    "azure": {
+        "embedding": "text-embedding-3-small",  # Your embedding deployment name
+        "llm": "gpt-35-turbo",  # Your chat deployment name  
+        "langextract_enabled": False,  # Disabled for comparison testing
         "langextract_model": "gemini-2.0-flash-exp"
+        # Azure setup uses OpenAI-compatible format with these env vars:
+        # OPENAI_API_KEY = your Azure API key
+        # OPENAI_BASE_URL = https://your-resource.openai.azure.com/openai/deployments/your-deployment/
     }
 }
 

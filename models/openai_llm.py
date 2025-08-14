@@ -9,8 +9,26 @@ class OpenAIGenerativeModel(GenerativeModel):
         if not api_key:
             raise ValueError("OPENAI_API_KEY environment variable not set.")
         
-        self.client = OpenAI(api_key=api_key)
-        self.model_name = model_name
+        # Check if we're using Azure
+        azure_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
+        azure_deployment = os.environ.get("AZURE_CHAT_DEPLOYMENT")
+        
+        if azure_endpoint and azure_deployment:
+            # Azure OpenAI with specific chat deployment and API version
+            base_url = f"{azure_endpoint.rstrip('/')}/openai/deployments/{azure_deployment}/"
+            self.client = OpenAI(
+                api_key=api_key, 
+                base_url=base_url,
+                default_query={"api-version": "2024-02-15-preview"}
+            )
+            # For Azure, use the deployment name as the model name
+            self.model_name = azure_deployment
+            print(f"🔗 Using Azure OpenAI chat: {base_url} (model: {self.model_name})")
+        else:
+            # Regular OpenAI
+            self.client = OpenAI(api_key=api_key)
+            self.model_name = model_name
+            print("🔗 Using regular OpenAI chat")
 
     def generate(self, prompt: str):
         """Generates a response using the OpenAI Chat Completions API."""

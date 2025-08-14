@@ -26,15 +26,28 @@ class ContentDiscoveryTool(BaseTool):
         self.return_json = return_json
 
     def _initialize_bm25(self):
-        if isinstance(self.db, ContentDiscoveryVectorDB):
-            print(f"Tool ({self.name}): Initializing BM25...")
-            documents_data = self.db.get_all_documents()
-            if not documents_data:
-                return None, None
-            # Extract just the content for BM25
-            documents = [doc["content"] for doc in documents_data]
-            tokenized_corpus = [doc.split(" ") for doc in documents]
-            return BM25Okapi(tokenized_corpus), documents_data
+        # Try to get all documents from any vector DB type
+        try:
+            if hasattr(self.db, 'get_all_documents'):
+                print(f"Tool ({self.name}): Initializing BM25...")
+                documents_data = self.db.get_all_documents()
+                if not documents_data:
+                    return None, None
+                
+                # Handle different document formats
+                if self._is_enhanced_database():
+                    # Enhanced database with structured content + educational metadata
+                    documents = [doc["content"] for doc in documents_data]
+                    tokenized_corpus = [doc.split(" ") for doc in documents]
+                    return BM25Okapi(tokenized_corpus), documents_data
+                else:
+                    # Basic content discovery database with structured content but no educational metadata
+                    documents = [doc["content"] for doc in documents_data]
+                    tokenized_corpus = [doc.split(" ") for doc in documents]
+                    return BM25Okapi(tokenized_corpus), documents_data
+        except Exception as e:
+            print(f"Tool ({self.name}): Could not initialize BM25: {e}")
+        
         return None, None
 
     def _extract_keywords_from_content(self, content: str, count: int = 8) -> List[str]:
@@ -62,6 +75,45 @@ class ContentDiscoveryTool(BaseTool):
         keywords = [word for word, count in word_counts.most_common(count)]
         
         return keywords
+
+    def _is_enhanced_database(self) -> bool:
+        """Check if the database supports enhanced content discovery features."""
+        # Check if it's the enhanced version specifically, not just the base ContentDiscoveryVectorDB
+        from vector_db.enhanced_content_discovery_db import EnhancedContentDiscoveryVectorDB
+        return isinstance(self.db, EnhancedContentDiscoveryVectorDB)
+    
+    def _generate_simple_response(self, query: str, results: list) -> str:
+        """Generate a simple LLM response for basic databases."""
+        # Extract text content from results
+        context_chunks = []
+        for result in results:
+            if isinstance(result, dict) and "content" in result:
+                context_chunks.append(result["content"])
+            elif isinstance(result, tuple):
+                context_chunks.append(result[0])  # Text is first element
+            else:
+                context_chunks.append(str(result))
+        
+        if not context_chunks:
+            return f"I couldn't find any relevant information to answer your question about '{query}'."
+
+        # Limit context to avoid overwhelming the model
+        context = "\n\n".join(context_chunks[:3])  # Use only top 3 chunks
+        
+        prompt = f"""Based on the following information, answer the question.
+
+Information:
+{context}
+
+Question: {query}
+
+Answer the question using the information provided above. Be specific and detailed."""
+        
+        try:
+            response = self.llm.generate(prompt)
+            return response
+        except Exception as e:
+            return f"Error generating response: {str(e)}"
 
     def _get_content_recommendations(self, query: str, results: List[Dict]) -> Dict:
         """Generate content recommendations with actual database metadata."""
@@ -184,7 +236,11 @@ class ContentDiscoveryTool(BaseTool):
                 return error_msg
 
             # Generate recommendations with ACTUAL filenames
-            recommendations_data = self._get_content_recommendations(query, final_results)
+            if self._is_enhanced_database():
+                recommendations_data = self._get_content_recommendations(query, final_results)
+            else:
+                # Fallback for basic database - generate simple LLM response
+                return self._generate_simple_response(query, final_results)
 
             if self.return_json:
                 # Return structured JSON response
