@@ -36,25 +36,29 @@ class HybridEducationalEnhancer:
     1. Pattern-based extraction (no API keys required)
     2. LangExtract integration (when API keys available)
     3. Local LLM enhancement (using existing models)
+    4. Fast bulk loading mode (for thousands of PDFs)
     """
     
-    def __init__(self, use_langextract: bool = True, api_key: Optional[str] = None):
+    def __init__(self, use_langextract: bool = True, api_key: Optional[str] = None, 
+                 fast_mode: bool = False):
         """
         Initialize the hybrid enhancer
         
         Args:
             use_langextract: Whether to attempt LangExtract usage
             api_key: Optional API key for cloud models
+            fast_mode: If True, only use pattern-based extraction (for bulk loading)
         """
         self.use_langextract = use_langextract and LANGEXTRACT_AVAILABLE
+        self.fast_mode = fast_mode  # ✅ New fast mode for bulk loading
         
-        # Check for various API key sources for LangExtract
+        # Check for API key sources for LangExtract (prioritize Azure OpenAI)
         self.api_key = (
             api_key or 
+            os.environ.get('OPENAI_API_KEY') or  # Use Azure OpenAI key for LangExtract
             os.environ.get('LANGEXTRACT_API_KEY') or
             os.environ.get('GOOGLE_API_KEY') or
-            os.environ.get('GEMINI_API_KEY') or
-            os.environ.get('OPENAI_API_KEY')  # Use Azure OpenAI key for LangExtract
+            os.environ.get('GEMINI_API_KEY')
         )
         
         # Pattern-based extraction patterns
@@ -93,7 +97,7 @@ class HybridEducationalEnhancer:
     
     def enhance_educational_content(self, content: str, filename: str = "unknown") -> EnhancedEducationalMetadata:
         """
-        Enhance educational content using available methods
+        Main enhancement method with fast mode support
         
         Args:
             content: Text content to enhance
@@ -103,6 +107,11 @@ class HybridEducationalEnhancer:
             Enhanced educational metadata
         """
         print(f"🔍 Enhancing content from {filename}...")
+        
+        # Fast mode: Only pattern-based extraction (for bulk loading)
+        if self.fast_mode:
+            print("🚀 Fast mode: Using pattern-based extraction only")
+            return self._enhance_with_patterns(content, filename)
         
         # Try LangExtract first if available and configured
         if self.use_langextract and self.api_key:
@@ -170,7 +179,7 @@ class HybridEducationalEnhancer:
         except Exception as e:
             print(f"⚠️ Azure OpenAI direct extraction failed: {str(e)}, trying LangExtract...")
         
-        # Original LangExtract attempt (keeping as fallback)
+        # Use LangExtract with Google Gemini (much cheaper than Azure OpenAI)
         educational_prompt = textwrap.dedent("""\
             Extract educational metadata from this content including:
             - Learning objectives and what students will learn
@@ -199,40 +208,45 @@ class HybridEducationalEnhancer:
             )
         ]
         
-        # Create Azure OpenAI client manually for LangExtract
-        import openai
+        print("🤖 Using LangExtract with Azure OpenAI...")
+        
+        # Check if we have Azure OpenAI environment variables
         azure_endpoint = os.environ.get('AZURE_OPENAI_ENDPOINT')
         deployment_name = os.environ.get('AZURE_CHAT_DEPLOYMENT', 'gpt-35-turbo')
         
         if azure_endpoint and deployment_name:
-            # Try Azure OpenAI with LangExtract
-            base_url = f"{azure_endpoint.rstrip('/')}/openai/deployments/{deployment_name}/"
+            # Use Azure OpenAI with LangExtract
+            print(f"🔗 LangExtract using Azure endpoint: {azure_endpoint}")
+            print(f"🔗 LangExtract using deployment: {deployment_name}")
             
+            # Try simpler Azure OpenAI configuration for LangExtract
             result = lx.extract(
                 text_or_documents=content,
                 prompt_description=educational_prompt,
                 examples=examples,
-                language_model_type=lx.inference.OpenAILanguageModel,  # Pass the class, not instance
+                language_model_type=lx.inference.OpenAILanguageModel,
                 model_id=deployment_name,
                 api_key=self.api_key,
-                fence_output=True,  # Required for OpenAI models
-                use_schema_constraints=False,  # Required for OpenAI models
+                fence_output=True,
+                use_schema_constraints=False,
                 language_model_params={
-                    "base_url": base_url,
-                    "api-version": "2024-02-15-preview"
+                    "azure_endpoint": azure_endpoint.rstrip('/'),
+                    "azure_deployment": deployment_name,
+                    "api_version": "2024-02-15-preview"
                 }
             )
         else:
-            # Fallback to regular OpenAI
+            # Fall back to regular OpenAI if Azure variables not set
+            print("🔗 LangExtract using regular OpenAI...")
             result = lx.extract(
                 text_or_documents=content,
                 prompt_description=educational_prompt,
                 examples=examples,
-                model_id="gpt-3.5-turbo",  # Use standard OpenAI model
-                api_key=self.api_key,
                 language_model_type=lx.inference.OpenAILanguageModel,
+                model_id="gpt-3.5-turbo",
+                api_key=self.api_key,
                 fence_output=True,
-                use_schema_constraints=False,
+                use_schema_constraints=False
             )
         
         return self._process_langextract_result(result, filename)

@@ -116,51 +116,94 @@ Answer the question using the information provided above. Be specific and detail
             return f"Error generating response: {str(e)}"
 
     def _get_content_recommendations(self, query: str, results: List[Dict]) -> Dict:
-        """Generate content recommendations with actual database metadata."""
+        """Generate content recommendations with enhanced educational metadata."""
         recommendations = []
         seen_files = set()
         
         for i, result in enumerate(results[:self.top_k]):
-            content = result["content"]
             filename = result["filename"]
             page = result["page"]
             
-            # Extract keywords from content
-            keywords = self._extract_keywords_from_content(content)
-            
-            # Extract keywords that match the query
-            query_lower = query.lower()
-            query_words = set(query_lower.split())
-            matched_keywords = [kw for kw in keywords if any(qw in kw for qw in query_words)]
-            
-            # If no query-specific keywords found, use general keywords from content
-            if not matched_keywords:
-                matched_keywords = keywords[:5]  # Top 5 keywords
-            
-            file_key = f"{filename}_page_{page}"
-            if file_key not in seen_files:
-                seen_files.add(file_key)
+            # Check if this is enhanced database result with educational metadata
+            if self._is_enhanced_database() and 'learning_objectives' in result:
+                # Use enhanced educational metadata
+                title = result.get('title', filename.replace('.pdf', '').replace('_', ' ').title())
+                difficulty = result.get('difficulty', 'unknown')
+                learning_objectives = result.get('learning_objectives', [])
+                key_concepts = result.get('key_concepts', [])
+                clean_content = result.get('clean_content', result.get('content', ''))
                 
-                summary = content[:200] + "..." if len(content) > 200 else content.strip()
+                # Generate summary from clean content
+                summary = clean_content[:200] + "..." if len(clean_content) > 200 else clean_content.strip()
                 
-                # Generate title from filename
-                title = filename.replace('.pdf', '').replace('_', ' ').title()
+                # Use key concepts as keywords, fallback to content extraction
+                keywords = key_concepts if key_concepts else self._extract_keywords_from_content(clean_content)
                 
-                # Generate course from keywords
-                course = f"{matched_keywords[0].title()} Studies" if matched_keywords else "General Studies"
+                # Generate course from key concepts or filename
+                if key_concepts:
+                    course = f"{key_concepts[0].title()} Studies" if key_concepts else "General Studies"
+                else:
+                    course = f"{filename.replace('.pdf', '').replace('_', ' ').title()} Studies"
                 
-                recommendation = {
-                    "filename": filename,  # ACTUAL filename from database
-                    "title": title,
-                    "author": "Document Author",  # Could be enhanced with metadata extraction
-                    "course": course,
-                    "page_number": page,
-                    "section": f"Page {page}",
-                    "keywords": matched_keywords,
-                    "summary": summary,
-                    "relevance_score": round(1.0 - (i * 0.1), 2)  # Decreasing relevance
-                }
-                recommendations.append(recommendation)
+                file_key = f"{filename}_page_{page}"
+                if file_key not in seen_files:
+                    seen_files.add(file_key)
+                    
+                    recommendation = {
+                        "filename": filename,  # ACTUAL filename from database
+                        "title": title,
+                        "author": "Document Author",
+                        "course": course,
+                        "page_number": page,
+                        "section": f"Page {page}",
+                        "keywords": keywords[:5],  # Limit to top 5
+                        "summary": summary,
+                        "difficulty_level": difficulty,
+                        "learning_objectives": learning_objectives[:3],  # Top 3 objectives
+                        "key_concepts": key_concepts[:5],  # Top 5 concepts
+                        "relevance_score": round(1.0 - (i * 0.1), 2)  # Decreasing relevance
+                    }
+                    recommendations.append(recommendation)
+            else:
+                # Fallback to basic metadata extraction for non-enhanced databases
+                content = result["content"]
+                
+                # Extract keywords from content
+                keywords = self._extract_keywords_from_content(content)
+                
+                # Extract keywords that match the query
+                query_lower = query.lower()
+                query_words = set(query_lower.split())
+                matched_keywords = [kw for kw in keywords if any(qw in kw for qw in query_words)]
+                
+                # If no query-specific keywords found, use general keywords from content
+                if not matched_keywords:
+                    matched_keywords = keywords[:5]  # Top 5 keywords
+                
+                file_key = f"{filename}_page_{page}"
+                if file_key not in seen_files:
+                    seen_files.add(file_key)
+                    
+                    summary = content[:200] + "..." if len(content) > 200 else content.strip()
+                    
+                    # Generate title from filename
+                    title = filename.replace('.pdf', '').replace('_', ' ').title()
+                    
+                    # Generate course from keywords
+                    course = f"{matched_keywords[0].title()} Studies" if matched_keywords else "General Studies"
+                    
+                    recommendation = {
+                        "filename": filename,  # ACTUAL filename from database
+                        "title": title,
+                        "author": "Document Author",  # Could be enhanced with metadata extraction
+                        "course": course,
+                        "page_number": page,
+                        "section": f"Page {page}",
+                        "keywords": matched_keywords,
+                        "summary": summary,
+                        "relevance_score": round(1.0 - (i * 0.1), 2)  # Decreasing relevance
+                    }
+                    recommendations.append(recommendation)
         
         return {
             "total_recommendations": len(recommendations),
@@ -170,7 +213,7 @@ Answer the question using the information provided above. Be specific and detail
         }
 
     def _create_text_response(self, recommendations_data: Dict) -> str:
-        """Create human-readable text response"""
+        """Create human-readable text response with enhanced educational metadata"""
         query = recommendations_data["query"]
         recommendations = recommendations_data["recommendations"]
         total = recommendations_data["total_recommendations"]
@@ -185,6 +228,19 @@ Answer the question using the information provided above. Be specific and detail
             response += f"**{i}. {rec['title']}**\n"
             response += f"   📄 File: {rec['filename']} (Page {rec['page_number']})\n"  # REAL filename!
             response += f"   📚 Course: {rec['course']}\n"
+            
+            # Show enhanced educational metadata if available
+            if 'difficulty_level' in rec and rec['difficulty_level'] != 'unknown':
+                response += f"   📊 Difficulty: {rec['difficulty_level'].title()}\n"
+            
+            if 'learning_objectives' in rec and rec['learning_objectives']:
+                objectives_text = ', '.join(rec['learning_objectives'][:2])  # Show top 2
+                response += f"   🎯 Learning Objectives: {objectives_text}\n"
+            
+            if 'key_concepts' in rec and rec['key_concepts']:
+                concepts_text = ', '.join(rec['key_concepts'][:3])  # Show top 3
+                response += f"   🧠 Key Concepts: {concepts_text}\n"
+            
             response += f"   🏷️  Keywords: {', '.join(rec['keywords'][:5])}\n"
             response += f"   📝 Summary: {rec['summary']}\n"
             response += f"   ⭐ Relevance: {rec['relevance_score']}\n\n"
@@ -200,7 +256,12 @@ Answer the question using the information provided above. Be specific and detail
             query_embedding = self.embedding_model.create_embedding(query)
             
             print(f"Tool ({self.name}): Searching content database...")
-            vector_results = self.db.search(query_embedding, top_k=self.top_k)
+            
+            # Use enhanced search if available, otherwise fallback to basic search
+            if self._is_enhanced_database() and hasattr(self.db, 'search_enhanced'):
+                vector_results = self.db.search_enhanced(query_embedding, top_k=self.top_k)
+            else:
+                vector_results = self.db.search(query_embedding, top_k=self.top_k)
 
             # Use vector results directly (they already have the right format)
             final_results = vector_results

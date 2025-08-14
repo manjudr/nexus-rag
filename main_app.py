@@ -5,284 +5,230 @@ Focuses on educational content processing
 """
 
 import argparse
-import os
 import main_config as config
+from typing import List, Dict
 
-# Core imports - keep the powerful stuff
-from models.llm import GenerativeModel
-from models.embedding import EmbeddingModel
-from models.huggingface_llm import HuggingFaceGenerativeModel
-from models.openai_llm import OpenAIGenerativeModel
-from models.sentence_transformer import SentenceTransformerEmbeddingModel
-from models.openai_embedding import OpenAIEmbeddingModel
-
-# Vector DB - Keep Milvus
-from vector_db.enhanced_content_discovery_db import EnhancedContentDiscoveryVectorDB
-from vector_db.content_discovery_db import ContentDiscoveryVectorDB
-
-# Agents - Keep the orchestrator and content discovery
-from agents.orchestrator_agent import OrchestratorAgent
-from tools.content_discovery_tool import ContentDiscoveryTool
-
-# Educational content parser - Streamlined
-from data_processing.enhanced_educational_parser import EnhancedEducationalContentParser
-from data_processing.hybrid_enhancer import HybridEducationalEnhancer
+# Core imports
 from data_processing.pdf_parser import PDFParser
 
-def setup_llm():
+# Vector DB imports
+from vector_db.content_discovery_db import ContentDiscoveryVectorDB
+from vector_db.enhanced_content_discovery_db import EnhancedContentDiscoveryVectorDB
+
+# Tools
+from tools.content_discovery_tool import ContentDiscoveryTool
+
+# Models
+from models.llm import GenerativeModel
+from models.embedding import EmbeddingModel
+
+# Agents - Proper agent-based architecture
+from agents.orchestrator_agent import OrchestratorAgent
+from agents.pdf_content_agent import PDFContentAgent
+from agents.video_transcript_agent import VideoTranscriptAgent
+from agents.general_query_agent import GeneralQueryAgent
+
+def setup_llm() -> GenerativeModel:
     """Initialize the language model based on configuration"""
-    current_models = config.MODELS[config.MODEL_PROVIDER]
+    provider = config.MODEL_PROVIDER
+    model_config = config.MODELS[provider]
     
-    if config.MODEL_PROVIDER == "azure":
-        # Use regular OpenAI client with Azure endpoint
-        return OpenAIGenerativeModel(model_name=current_models["llm"])
-    elif config.MODEL_PROVIDER == "cloud":
-        return OpenAIGenerativeModel(model_name=current_models["llm"])
+    if provider == "local":
+        # Local model setup
+        from models.huggingface_llm import HuggingFaceLLM
+        return HuggingFaceLLM(model_config["llm"])
+    
+    elif provider == "azure":
+        # Azure OpenAI setup
+        from models.openai_llm import OpenAIGenerativeModel
+        return OpenAIGenerativeModel(model_config["llm"])
+    
     else:
-        return HuggingFaceGenerativeModel(model_name=current_models["llm"])
+        raise ValueError(f"Unknown provider: {provider}")
 
-def setup_embedding():
+def setup_embedding() -> EmbeddingModel:
     """Initialize the embedding model based on configuration"""
-    current_models = config.MODELS[config.MODEL_PROVIDER]
+    provider = config.MODEL_PROVIDER
+    model_config = config.MODELS[provider]
     
-    if config.MODEL_PROVIDER == "azure":
-        # Use regular OpenAI client with Azure endpoint  
-        return OpenAIEmbeddingModel(model_name=current_models["embedding"])
-    elif config.MODEL_PROVIDER == "cloud":
-        return OpenAIEmbeddingModel(model_name=current_models["embedding"])
+    if provider == "local":
+        # Local embedding model
+        from models.sentence_transformer import SentenceTransformerEmbedding
+        return SentenceTransformerEmbedding(model_config["embedding"])
+    
+    elif provider == "azure":
+        # Azure OpenAI embedding
+        from models.openai_embedding import OpenAIEmbeddingModel
+        return OpenAIEmbeddingModel(model_config["embedding"])
+    
     else:
-        return SentenceTransformerEmbeddingModel(model_name=current_models["embedding"])
+        raise ValueError(f"Unknown provider: {provider}")
 
-def create_agent_tools(llm: GenerativeModel, embedding_model: EmbeddingModel, json_output: bool = False) -> list:
-    """Create tools for each agent"""
-    tools = []
-    current_models = config.MODELS[config.MODEL_PROVIDER]
-    langextract_enabled = current_models.get("langextract_enabled", False)
+def create_specialized_agents(llm: GenerativeModel, embedding_model: EmbeddingModel) -> list:
+    """Create specialized agents for different content types"""
+    agents = []
     
     for agent_key, agent_config in config.AGENTS.items():
-        print(f"🔧 Setting up {agent_config['name']}...")
+        print(f"🤖 Setting up {agent_config['name']}...")
         
-        # Create enhanced vector DB for educational content
-        if agent_config.get("enhanced_parsing", False):
-            vector_db = EnhancedContentDiscoveryVectorDB(
+        agent_class = agent_config["class"]
+        
+        # Create the appropriate specialized agent
+        if agent_class == "PDFContentAgent":
+            agent = PDFContentAgent(
                 db_path=config.DB_PATH,
-                collection_name=agent_config["collection"],
-                top_k=config.TOP_K,
-                use_langextract=langextract_enabled
-            )
-            
-            # Use content discovery tool for enhanced features
-            tool = ContentDiscoveryTool(
-                db=vector_db,
                 embedding_model=embedding_model,
                 llm=llm,
-                name=agent_config["name"],
-                description=agent_config["description"],
-                top_k=config.TOP_K,
-                return_json=json_output
-            )
-        else:
-            # Use basic content discovery DB for general queries  
-            vector_db = ContentDiscoveryVectorDB(
-                db_path=config.DB_PATH,
-                collection_name=agent_config["collection"],
                 top_k=config.TOP_K
             )
-            
-            # Use same ContentDiscoveryTool but with basic database
-            tool = ContentDiscoveryTool(
-                db=vector_db,
+        elif agent_class == "VideoTranscriptAgent":
+            agent = VideoTranscriptAgent(
+                db_path=config.DB_PATH,
                 embedding_model=embedding_model,
                 llm=llm,
-                name=agent_config["name"],
-                description=agent_config["description"],
-                top_k=config.TOP_K,
-                return_json=json_output
+                top_k=config.TOP_K
             )
-        
-        tools.append(tool)
+        elif agent_class == "GeneralQueryAgent":
+            agent = GeneralQueryAgent(
+                db_path=config.DB_PATH,
+                embedding_model=embedding_model,
+                llm=llm,
+                top_k=config.TOP_K
+            )
+        else:
+            print(f"⚠️  Unknown agent class: {agent_class}")
+            continue
+            
+        agents.append(agent)
     
-    return tools
+    return agents
 
 def load_educational_content(embedding_model: EmbeddingModel, limit_chunks: int = None):
-    """Load educational content with enhanced parsing"""
-    print("📚 Loading educational content...")
+    """Load educational content into PDF agent's dedicated collection"""
+    print("📚 Loading educational content into PDF agent's collection...")
     if limit_chunks:
-        print(f"🔬 Development mode: limiting to {limit_chunks} chunks for quick testing")
+        print(f"📊 Loading limited to {limit_chunks} chunks for testing")
     
+    # Get configuration - centralized in MODELS section
     current_models = config.MODELS[config.MODEL_PROVIDER]
     langextract_enabled = current_models.get("langextract_enabled", False)
     
-    # Setup enhanced parser
-    parser = EnhancedEducationalContentParser(
+    # Create appropriate database based on LangExtract setting
+    if langextract_enabled:
+        # Use enhanced database with LangExtract
+        vector_db = EnhancedContentDiscoveryVectorDB(
+            db_path=config.DB_PATH,
+            collection_name="pdf_educational_content",  # PDF agent's collection
+            top_k=config.TOP_K,
+            use_langextract=langextract_enabled
+        )
+        print(f"✅ Using ENHANCED database with LangExtract: {langextract_enabled}")
+    else:
+        # Use basic database for fast loading
+        vector_db = ContentDiscoveryVectorDB(
+            db_path=config.DB_PATH,
+            collection_name="pdf_educational_content",  # PDF agent's collection
+            top_k=config.TOP_K
+        )
+        print(f"✅ Using BASIC database (fast mode)")
+
+    # Parse PDF content 
+    print("📖 Parsing PDF content...")
+    pdf_parser = PDFParser(
         chunk_size=config.CHUNK_SIZE,
-        chunk_overlap=config.CHUNK_OVERLAP,
-        use_langextract=langextract_enabled
+        chunk_overlap=config.CHUNK_OVERLAP
     )
     
-    # Setup enhanced vector DB
-    vector_db = EnhancedContentDiscoveryVectorDB(
-        db_path=config.DB_PATH,
-        collection_name="educational_content",
-        top_k=config.TOP_K,
-        use_langextract=langextract_enabled
-    )
+    # Get all PDF files and parse them
+    import os
+    all_pdf_files = []
     
-    vector_db.setup(dimension=embedding_model.get_embedding_dimension())
+    # Search recursively for PDF files
+    for root, dirs, files in os.walk(config.CONTENT_DIRECTORY):
+        for file in files:
+            if file.endswith('.pdf'):
+                pdf_path = os.path.join(root, file)
+                all_pdf_files.append((pdf_path, file))
     
-    # Check if we have PDF files to process directly
-    pdf_directory = config.CONTENT_DIRECTORY
-    if os.path.exists(pdf_directory):
-        pdf_files = [f for f in os.listdir(pdf_directory) if f.endswith('.pdf')]
+    if not all_pdf_files:
+        print("❌ No PDF files found in content directory")
+        return
+    
+    print(f"📁 Found {len(all_pdf_files)} PDF files")
+    
+    all_chunks = []
+    for pdf_path, pdf_file in all_pdf_files:
+        print(f"📄 Processing: {pdf_file}")
+        chunks, metadata = pdf_parser.parse_pdf(pdf_path)
         
-        if pdf_files:
-            print(f"📄 Found {len(pdf_files)} PDF files to process...")
-            all_chunks = []
-            all_metadata = []
-            
-            # Use PDFParser for parsing actual PDF files
-            pdf_parser = PDFParser(
-                chunk_size=config.CHUNK_SIZE,
-                chunk_overlap=config.CHUNK_OVERLAP
-            )
-            
-            for pdf_file in pdf_files:
-                pdf_path = os.path.join(pdf_directory, pdf_file)
-                print(f"📖 Processing: {pdf_file}")
-                
-                try:
-                    # Use the PDF parser to extract content
-                    chunks, metadata = pdf_parser.parse_pdf(pdf_path)
-                    
-                    # Apply enhanced extraction to each chunk if enabled
-                    if langextract_enabled:
-                        enhancer = HybridEducationalEnhancer(use_langextract=True)
-                        
-                        # Limit chunks for development/testing
-                        chunks_to_process = chunks[:limit_chunks] if limit_chunks else chunks
-                        metadata_to_process = metadata[:limit_chunks] if limit_chunks else metadata
-                        
-                        print(f"🤖 Applying enhanced extraction to {len(chunks_to_process)} chunks from {pdf_file}...")
-                        
-                        # Process chunks in smaller groups to avoid overwhelming the API
-                        for chunk_idx, chunk in enumerate(chunks_to_process):
-                            try:
-                                # Get the content from chunk (handle both string and dict formats)
-                                chunk_content = chunk if isinstance(chunk, str) else chunk.get('content', str(chunk))
-                                
-                                # Apply enhancement to this chunk
-                                if len(chunk_content) > 100:  # Only enhance meaningful chunks
-                                    enhancement_result = enhancer.enhance_educational_content(
-                                        chunk_content, f"{pdf_file}_chunk_{chunk_idx}"
-                                    )
-                                    
-                                    # Add enhancement results to metadata
-                                    enhanced_metadata = metadata_to_process[chunk_idx] if chunk_idx < len(metadata_to_process) else {}
-                                    enhanced_metadata.update({
-                                        'source_file': pdf_file,
-                                        'file_type': 'pdf',
-                                        'enhanced': True,
-                                        'enhancement_method': enhancement_result.extraction_method,
-                                        'learning_objectives': [obj.get('text', '') for obj in enhancement_result.learning_objectives],
-                                        'key_concepts': [concept.get('text', '') for concept in enhancement_result.key_concepts],
-                                        'difficulty_level': enhancement_result.difficulty_level,
-                                        'study_questions': [q.get('text', '') for q in enhancement_result.study_questions],
-                                        'prerequisites': [p.get('text', '') for p in enhancement_result.prerequisites],
-                                        'examples': [e.get('text', '') for e in enhancement_result.examples]
-                                    })
-                                    all_metadata.append(enhanced_metadata)
-                                else:
-                                    # For small chunks, just add basic metadata
-                                    enhanced_metadata = metadata_to_process[chunk_idx] if chunk_idx < len(metadata_to_process) else {}
-                                    enhanced_metadata.update({
-                                        'source_file': pdf_file,
-                                        'file_type': 'pdf',
-                                        'enhanced': False
-                                    })
-                                    all_metadata.append(enhanced_metadata)
-                                
-                                all_chunks.append(chunk_content)
-                                
-                                # Add a small delay every few chunks to avoid rate limiting
-                                if (chunk_idx + 1) % 5 == 0:
-                                    import time
-                                    time.sleep(1)
-                                    
-                            except Exception as e:
-                                print(f"⚠️ Enhancement failed for chunk {chunk_idx}: {str(e)}")
-                                # Add chunk without enhancement
-                                chunk_content = chunk if isinstance(chunk, str) else chunk.get('content', str(chunk))
-                                enhanced_metadata = metadata_to_process[chunk_idx] if chunk_idx < len(metadata_to_process) else {}
-                                enhanced_metadata.update({
-                                    'source_file': pdf_file,
-                                    'file_type': 'pdf',
-                                    'enhanced': False
-                                })
-                                all_metadata.append(enhanced_metadata)
-                                all_chunks.append(chunk_content)
-                    else:
-                        # Without enhancement, just add basic metadata
-                        chunks_to_process = chunks[:limit_chunks] if limit_chunks else chunks
-                        metadata_to_process = metadata[:limit_chunks] if limit_chunks else metadata
-                        
-                        for i, chunk in enumerate(chunks_to_process):
-                            enhanced_metadata = metadata_to_process[i] if i < len(metadata_to_process) else {}
-                            enhanced_metadata.update({
-                                'source_file': pdf_file,
-                                'file_type': 'pdf',
-                                'enhanced': False
-                            })
-                            all_metadata.append(enhanced_metadata)
-                            chunk_content = chunk if isinstance(chunk, str) else chunk.get('content', str(chunk))
-                            all_chunks.append(chunk_content)
-                    
-                    print(f"✅ Processed {pdf_file}: {len(chunks)} chunks")
-                    
-                except Exception as e:
-                    print(f"❌ Error processing {pdf_file}: {str(e)}")
-            
-            if all_chunks:
-                print(f"📄 Processing {len(all_chunks)} total chunks...")
-                
-                # Create embeddings
-                print("🔄 Creating embeddings...")
-                embeddings = embedding_model.create_embedding(all_chunks)
-                
-                # Insert into database
-                print("💾 Inserting into vector database...")
-                vector_db.insert(data=all_chunks, embeddings=embeddings, metadata=all_metadata)
-                
-                print(f"✅ Successfully loaded {len(all_chunks)} chunks from {len(pdf_files)} PDF files")
-                return
+        # Convert to the expected format
+        for i, chunk in enumerate(chunks):
+            chunk_data = {
+                "content": chunk,
+                "filename": pdf_file,
+                "page": metadata[i]["page"] if i < len(metadata) else 1,
+                "chunk_id": i
+            }
+            all_chunks.append(chunk_data)
     
-    # Fallback to original method if no PDFs found
-    # Parse content
-    chunks, metadata = parser.parse_educational_content_enhanced(
-        config.CONTENT_DIRECTORY,
-        config.METADATA_FILE
-    )
+    chunks = all_chunks
     
-    print(f"📄 Processing {len(chunks)} enhanced chunks...")
+    if not chunks:
+        print("❌ No content found to load")
+        return
+    
+    # Limit chunks if specified
+    if limit_chunks:
+        chunks = chunks[:limit_chunks]
+    
+    print(f"📄 Found {len(chunks)} content chunks")
     
     # Create embeddings
-    print("🔄 Creating embeddings...")
-    embeddings = embedding_model.create_embedding(chunks)
+    print("🔗 Creating embeddings...")
+    embeddings = embedding_model.create_embedding([chunk["content"] for chunk in chunks])
     
-    # Insert into database
-    print("💾 Inserting into vector database...")
-    vector_db.insert(data=chunks, embeddings=embeddings, metadata=metadata)
+    # Prepare metadata
+    metadata = []
+    for chunk in chunks:
+        meta = {
+            "filename": chunk["filename"],
+            "page": chunk.get("page", 1),
+            "chunk_id": chunk.get("chunk_id", 0),
+            "content_type": "educational_pdf",
+            "source": "pdf_content_agent"
+        }
+        metadata.append(meta)
     
-    print(f"✅ Successfully loaded {len(chunks)} enhanced chunks")
+    # Insert into PDF agent's database
+    print("💾 Inserting into PDF agent's vector database...")
+    
+    # First, set up the collection with the embedding dimension
+    if embeddings:
+        dimension = len(embeddings[0])
+        vector_db.setup(dimension)
+    
+    # Extract just the content strings for the insert method
+    content_strings = [chunk["content"] for chunk in chunks]
+    
+    # Use enhanced insert if available, otherwise regular insert
+    if hasattr(vector_db, 'insert_enhanced') and langextract_enabled:
+        print("🚀 Using ENHANCED INSERT with LangExtract metadata extraction...")
+        vector_db.insert_enhanced(data=content_strings, embeddings=embeddings, metadata=metadata, enhance_content=True)
+    else:
+        print("📦 Using basic insert (no LangExtract enhancement)")
+        vector_db.insert(data=content_strings, embeddings=embeddings, metadata=metadata)
+    
+    print(f"✅ Successfully loaded {len(chunks)} chunks into PDF agent collection")
 
 def query_system(query: str, llm: GenerativeModel, embedding_model: EmbeddingModel, json_output: bool = False):
-    """Query the system with orchestrator"""
+    """Query the system with orchestrator and specialized agents"""
     print(f"🔍 Processing query: '{query}'...")
     
-    # Create agent tools
-    tools = create_agent_tools(llm, embedding_model, json_output)
+    # Create specialized agents
+    agents = create_specialized_agents(llm, embedding_model)
     
-    # Create orchestrator
-    orchestrator = OrchestratorAgent(llm=llm, tools=tools)
+    # Create orchestrator with agents
+    orchestrator = OrchestratorAgent(llm=llm, agents=agents)
     
     # Process query
     result = orchestrator.run(query)
@@ -326,7 +272,7 @@ def main():
         print(result)
         
     else:
-        parser.print_help()
+        print("Please specify --load, --load-small, --query, or --status")
 
 if __name__ == "__main__":
     main()

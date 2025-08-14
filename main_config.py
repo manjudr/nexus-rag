@@ -12,14 +12,14 @@ CHUNK_SIZE = 1024
 CHUNK_OVERLAP = 128
 
 # Educational content paths
-CONTENT_DIRECTORY = "data/educational_content/pdfs/"
+CONTENT_DIRECTORY = "data/"  # ✅ Process all PDFs
 METADATA_FILE = "data/educational_content/metadata.json"
 
 # =============================================================================
 # MODEL CONFIGURATION (Unified for all components)
 # =============================================================================
 # Choose one provider: "local" (free, offline) or "azure" (Azure OpenAI with OpenAI-compatible API)
-MODEL_PROVIDER = "local"
+MODEL_PROVIDER = "azure"
 
 # Model definitions for each provider
 MODELS = {
@@ -31,28 +31,36 @@ MODELS = {
     "azure": {
         "embedding": "text-embedding-3-small",  # Your embedding deployment name
         "llm": "gpt-35-turbo",  # Your chat deployment name  
-        "langextract_enabled": False,  # Disabled for comparison testing
-        "langextract_model": "gemini-2.0-flash-exp"
+        "langextract_enabled": True,  # ✅ ENABLED for testing with LangExtract
+        "langextract_model": "gpt-35-turbo"  # Use Azure OpenAI for LangExtract too
         # Azure setup uses OpenAI-compatible format with these env vars:
         # OPENAI_API_KEY = your Azure API key
-        # OPENAI_BASE_URL = https://your-resource.openai.azure.com/openai/deployments/your-deployment/
+        # AZURE_OPENAI_ENDPOINT = https://your-resource.openai.azure.com/
+        # AZURE_CHAT_DEPLOYMENT = gpt-35-turbo
+        # AZURE_EMBEDDING_DEPLOYMENT = text-embedding-3-small
     }
 }
 
 # =============================================================================
-# AGENT CONFIGURATION
+# AGENT CONFIGURATION - Proper Agent-Based Architecture
 # =============================================================================
 AGENTS = {
-    "educational_content": {
-        "name": "Educational Content Discovery Agent",
-        "collection": "educational_content",
-        "description": "Discovers educational content with enhanced metadata",
-        "enhanced_parsing": True
+    "pdf_content": {
+        "name": "PDF Content Agent",
+        "class": "PDFContentAgent",
+        "collection": "pdf_educational_content",  # Dedicated PDF collection
+        "description": "Specialized agent for educational PDF content with enhanced metadata extraction"
+    },
+    "video_transcript": {
+        "name": "Video Transcript Agent", 
+        "class": "VideoTranscriptAgent",
+        "collection": "video_transcripts",  # Dedicated video collection
+        "description": "Specialized agent for video transcript analysis with speaker detection"
     },
     "general_query": {
         "name": "General Query Agent",
-        "collection": "general_content",
-        "description": "Answers general questions about content",
-        "enhanced_parsing": False
+        "class": "GeneralQueryAgent", 
+        "collection": "general_content",  # General content collection
+        "description": "General purpose agent for non-specialized queries"
     }
 }
