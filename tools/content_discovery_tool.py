@@ -375,10 +375,19 @@ class ContentDiscoveryTool(BaseTool):
         import re
         clean_content = content.strip()
         
+        # Remove metadata artifacts and malformed content
+        clean_content = re.sub(r'FILENAME:[^\s]+\s+PAGE:\d+\s+TITLE:[^\\n]*\s+DIFFICULTY:[^\s]+\s+CONTENT:', '', clean_content, flags=re.IGNORECASE)
+        clean_content = re.sub(r'FILENAME:[^\\n]*', '', clean_content, flags=re.IGNORECASE)  # Remove any FILENAME lines
+        clean_content = re.sub(r'PAGE:\d+', '', clean_content, flags=re.IGNORECASE)  # Remove PAGE lines
+        clean_content = re.sub(r'TITLE:[^\\n]*', '', clean_content, flags=re.IGNORECASE)  # Remove TITLE lines
+        clean_content = re.sub(r'DIFFICULTY:[^\\s]*', '', clean_content, flags=re.IGNORECASE)  # Remove DIFFICULTY lines
+        clean_content = re.sub(r'^[A-Z]+:[^\\n]*\\n', '', clean_content, flags=re.MULTILINE)  # Remove metadata lines
+        
         # Remove common PDF artifacts and formatting issues
         clean_content = re.sub(r'CHAPTER \d+|Page \d+|\d+\s+BIOLOGY|PHOTOSYNTHESIS IN HIGHER PLANTS', '', clean_content, flags=re.IGNORECASE)
         clean_content = re.sub(r'\d+\.\d+\s+[A-Z][^.]*\?', '', clean_content)  # Remove section headings like "13.1 What do we Know?"
         clean_content = re.sub(r'^\s*\d+\.\s*', '', clean_content, flags=re.MULTILINE)  # Remove numbered lists
+        clean_content = re.sub(r'\d{4}-\d{2}', '', clean_content)  # Remove years like "2020-21"
         clean_content = re.sub(r'\s+', ' ', clean_content)  # Normalize whitespace
         clean_content = clean_content.strip()
         
@@ -386,28 +395,51 @@ class ContentDiscoveryTool(BaseTool):
         if len(clean_content) < 50 or re.match(r'^[A-Z\s\d.?]+$', clean_content):
             return f"Educational content about {query.lower()} is available but requires more detailed reading."
         
+        # Check if content is mostly metadata or table of contents
+        if (len(clean_content) < 150 and 
+            ('FILENAME:' in content or 'PAGE:' in content or 'TITLE:' in content or 
+             any(indicator in content for indicator in ['13.2 Early', '13.6 The Electron', '13.8 The C4', '13.9 Photo', '13.10Factors']))):
+            return f"This appears to be a table of contents or chapter overview for {query.lower()} content."
+        
         # If content is already short enough and clean, return as is
         if len(clean_content) <= max_length:
             return clean_content
+
+        # CRITICAL FIX: Check if content is actually relevant to the query
+        # Extract key terms from query and check if they appear in content
+        query_terms = re.findall(r'\b\w+\b', query.lower())
+        main_query_terms = [term for term in query_terms if len(term) > 3 and term not in ['what', 'how', 'why', 'when', 'where', 'tell', 'about', 'explain', 'define', 'prevent']]
+        
+        content_lower = clean_content.lower()
+        
+        # Check if the content actually contains relevant information
+        relevant_terms_found = 0
+        for term in main_query_terms:
+            if term in content_lower:
+                relevant_terms_found += 1
+        
+        # If content doesn't contain the main query terms, don't hallucinate
+        if relevant_terms_found == 0 and main_query_terms:
+            return f"This content discusses {self._identify_content_topic(clean_content)} but does not contain information about {' '.join(main_query_terms)}."
         
         try:
             # Always try LLM approach first with better preprocessing
             if self.llm:
-                # Create a very simple, focused prompt
-                prompt = f"""Create a simple, clear definition that answers: "{query}"
+                # Create a very simple, focused prompt that emphasizes accuracy
+                prompt = f"""Based ONLY on the content provided below, create a brief summary that relates to: "{query}"
 
-Content to summarize:
+Content:
 {clean_content[:1000]}
 
-Requirements:
+IMPORTANT INSTRUCTIONS:
+- ONLY use information that is actually present in the content above
+- If the content does not contain information about the query topic, say "This content does not discuss [topic]"
+- Do NOT make up or invent any information
 - Write like you're explaining to a student
-- Start with "[Subject] is..." format for "What is" questions  
 - Maximum 2-3 simple sentences
-- No technical jargon or complex terms
 - No chapter references or page numbers
-- Focus only on the core concept
 
-Simple explanation:"""
+Summary based on the actual content:"""
 
                 try:
                     response = self.llm.generate(prompt)
@@ -416,7 +448,7 @@ Simple explanation:"""
                     summary = response.strip() if response else ""
                     
                     # Clean up the response thoroughly
-                    summary = re.sub(r'^(Simple explanation:|Concise Summary:|Summary:|Answer:|Response:)\s*', '', summary, flags=re.IGNORECASE)
+                    summary = re.sub(r'^(Summary based on the actual content:|Simple explanation:|Concise Summary:|Summary:|Answer:|Response:)\s*', '', summary, flags=re.IGNORECASE)
                     summary = re.sub(r'\*\*([^*]+)\*\*', r'\1', summary)  # Remove bold formatting
                     summary = re.sub(r'CHAPTER \d+|Page \d+|\d+\s+BIOLOGY', '', summary, flags=re.IGNORECASE)
                     summary = re.sub(r'\d+\.\d+\s+', '', summary)  # Remove section numbers
@@ -434,32 +466,8 @@ Simple explanation:"""
                     if len(summary) > max_length:
                         summary = summary[:max_length-3] + "..."
                     
-                    # Quality check: If the LLM response is poor, try again with simpler approach
-                    if (len(summary) < 30 or 
-                        any(phrase in summary.lower() for phrase in ['chapter', 'section', 'figure', 'table of contents', 'i cannot', 'i don\'t know', 'no information']) or
-                        summary.count('.') > 5):  # Too many sentences
-                        
-                        # Try a second, even simpler prompt
-                        simple_prompt = f"""In one simple sentence, what is {query.replace('What is ', '').replace('Define ', '').replace('?', '')}?
-
-Content: {clean_content[:500]}
-
-One sentence answer:"""
-                        
-                        try:
-                            simple_response = self.llm.generate(simple_prompt)
-                            simple_summary = simple_response.strip() if simple_response else ""
-                            
-                            simple_summary = re.sub(r'^(One sentence answer:|Answer:)\s*', '', simple_summary, flags=re.IGNORECASE)
-                            simple_summary = simple_summary.strip()
-                            
-                            if len(simple_summary) > 20 and len(simple_summary) <= max_length:
-                                return simple_summary
-                        except Exception as e:
-                            pass
-                    
                     # If we have a good summary, return it
-                    if len(summary) >= 30 and len(summary) <= max_length:
+                    if len(summary) >= 20 and len(summary) <= max_length:
                         return summary
                     
                 except Exception as e:
@@ -721,6 +729,10 @@ Answer the question using the information provided above. Be specific and detail
                 # Generate LLM-based summary from clean content
                 summary = self._create_llm_generated_summary(clean_content, query)
                 
+                # QUALITY CHECK: Skip results with poor quality summaries (metadata artifacts)
+                if self._is_poor_quality_summary(summary):
+                    continue  # Skip this result entirely
+                
                 # Use key concepts as keywords, fallback to content extraction
                 keywords = key_concepts if key_concepts else self._extract_keywords_from_content(clean_content)
                 
@@ -770,6 +782,10 @@ Answer the question using the information provided above. Be specific and detail
                     seen_files.add(file_key)
                     
                     summary = self._create_llm_generated_summary(content, query)
+                    
+                    # QUALITY CHECK: Skip results with poor quality summaries (metadata artifacts)
+                    if self._is_poor_quality_summary(summary):
+                        continue  # Skip this result entirely
                     
                     # Generate title from filename
                     title = filename.replace('.pdf', '').replace('_', ' ').title()
@@ -866,7 +882,7 @@ Answer the question using the information provided above. Be specific and detail
                 final_results = combined_results[:self.top_k]
 
             # Check relevance scores - filter out results with poor similarity
-            RELEVANCE_THRESHOLD = 0.2  # Lower threshold for broader content matching
+            RELEVANCE_THRESHOLD = 0.3  # Higher threshold for better content matching
             relevant_results = []
             
             for result in final_results:
@@ -882,9 +898,15 @@ Answer the question using the information provided above. Be specific and detail
                 else:
                     similarity = 0.0
                 
-                # Only include results above threshold
-                if similarity >= RELEVANCE_THRESHOLD:
-                    relevant_results.append(result)
+                # CONTENT RELEVANCE CHECK: Analyze if content actually contains query-related information
+                content = result.get('content', '') or result.get('clean_content', '')
+                if self._is_content_relevant_to_query(content, query):
+                    # Only include results above threshold AND with relevant content
+                    if similarity >= RELEVANCE_THRESHOLD:
+                        relevant_results.append(result)
+                else:
+                    # Skip content that doesn't actually relate to the query
+                    continue
             
             if not relevant_results:
                 error_msg = f"No relevant content found for '{query}'. The available content doesn't match your query well enough."
@@ -940,3 +962,159 @@ Answer the question using the information provided above. Be specific and detail
                 return json.dumps(error_response, indent=2)
             
             return error_msg
+
+    def _identify_content_topic(self, content: str) -> str:
+        """Identify what the content is actually about based on keywords."""
+        import re
+        
+        content_lower = content.lower()
+        
+        # Common topic keywords
+        topic_keywords = {
+            'physical education': ['physical education', 'sports', 'exercise', 'fitness', 'physical activity'],
+            'biology': ['biology', 'photosynthesis', 'plant', 'cell', 'organism', 'life'],
+            'health': ['health', 'medical', 'disease', 'treatment', 'medicine'],
+            'mathematics': ['mathematics', 'equation', 'formula', 'calculation', 'number'],
+            'chemistry': ['chemistry', 'chemical', 'reaction', 'compound', 'element'],
+            'physics': ['physics', 'force', 'energy', 'motion', 'gravity'],
+            'education': ['education', 'learning', 'teaching', 'curriculum', 'student']
+        }
+        
+        for topic, keywords in topic_keywords.items():
+            if any(keyword in content_lower for keyword in keywords):
+                return topic
+        
+        # Extract the first few meaningful words as a fallback
+        words = re.findall(r'\b[a-zA-Z]{4,}\b', content)
+        if words:
+            return ' '.join(words[:3]).lower()
+        
+        return "general content"
+    
+    def _is_content_relevant_to_query(self, content: str, query: str) -> bool:
+        """Check if content actually contains information relevant to the query BEFORE calling LLM."""
+        import re
+        
+        if not content or not query:
+            return False
+        
+        # Clean and normalize content and query
+        content_lower = content.lower()
+        query_lower = query.lower()
+        
+        # Extract meaningful terms from query (exclude common question words)
+        stop_words = {'what', 'how', 'why', 'when', 'where', 'who', 'is', 'are', 'the', 'to', 'and', 'or', 'of', 'in', 'on', 'at', 'for', 'with', 'by'}
+        query_terms = re.findall(r'\b\w{3,}\b', query_lower)
+        meaningful_query_terms = [term for term in query_terms if term not in stop_words]
+        
+        if not meaningful_query_terms:
+            return False
+        
+        # Check for direct term matches
+        direct_matches = 0
+        for term in meaningful_query_terms:
+            if term in content_lower:
+                direct_matches += 1
+        
+        # If most terms are present, it's likely relevant
+        if direct_matches >= len(meaningful_query_terms) * 0.5:  # At least 50% of terms match
+            return True
+        
+        # Check for semantic relevance using keyword categories
+        query_categories = self._categorize_query(query_lower)
+        content_categories = self._categorize_content(content_lower)
+        
+        # If query and content share categories, they're related
+        if query_categories.intersection(content_categories):
+            return True
+        
+        # Final check: look for topic-specific indicators
+        topic_indicators = {
+            'coronavirus': ['virus', 'covid', 'pandemic', 'infection', 'disease', 'health', 'prevention', 'mask', 'sanitizer', 'hygiene'],
+            'prevention': ['prevent', 'avoid', 'protect', 'safety', 'precaution', 'measure', 'step', 'method'],
+            'photosynthesis': ['plant', 'leaf', 'light', 'carbon', 'oxygen', 'chlorophyll', 'energy', 'glucose'],
+            'biology': ['cell', 'organism', 'life', 'gene', 'dna', 'evolution', 'species'],
+            'education': ['learn', 'teach', 'study', 'school', 'class', 'student', 'curriculum']
+        }
+        
+        for main_term in meaningful_query_terms:
+            if main_term in topic_indicators:
+                indicators = topic_indicators[main_term]
+                if any(indicator in content_lower for indicator in indicators):
+                    return True
+        
+        return False
+    
+    def _categorize_query(self, query: str) -> set:
+        """Categorize query into topic areas."""
+        categories = set()
+        
+        category_keywords = {
+            'health': ['health', 'disease', 'medical', 'virus', 'infection', 'prevention', 'coronavirus', 'covid'],
+            'biology': ['biology', 'plant', 'animal', 'cell', 'photosynthesis', 'organism', 'life'],
+            'education': ['education', 'learning', 'teaching', 'study', 'curriculum'],
+            'physics': ['physics', 'force', 'energy', 'motion', 'gravity'],
+            'chemistry': ['chemistry', 'chemical', 'reaction', 'compound'],
+            'mathematics': ['math', 'calculation', 'equation', 'formula', 'number'],
+            'sports': ['sports', 'exercise', 'fitness', 'physical activity', 'game']
+        }
+        
+        for category, keywords in category_keywords.items():
+            if any(keyword in query for keyword in keywords):
+                categories.add(category)
+        
+        return categories
+    
+    def _categorize_content(self, content: str) -> set:
+        """Categorize content into topic areas."""
+        categories = set()
+        
+        category_keywords = {
+            'health': ['health', 'disease', 'medical', 'virus', 'infection', 'prevention', 'medicine'],
+            'biology': ['biology', 'plant', 'animal', 'cell', 'photosynthesis', 'organism', 'life', 'species'],
+            'education': ['education', 'learning', 'teaching', 'study', 'curriculum', 'student', 'class'],
+            'physics': ['physics', 'force', 'energy', 'motion', 'gravity', 'velocity'],
+            'chemistry': ['chemistry', 'chemical', 'reaction', 'compound', 'element'],
+            'mathematics': ['mathematics', 'calculation', 'equation', 'formula', 'number'],
+            'sports': ['sports', 'exercise', 'fitness', 'physical activity', 'game', 'physical education']
+        }
+        
+        for category, keywords in category_keywords.items():
+            if any(keyword in content for keyword in keywords):
+                categories.add(category)
+        
+        return categories
+    
+    def _is_poor_quality_summary(self, summary: str) -> bool:
+        """Check if a summary contains metadata artifacts or is of poor quality."""
+        if not summary:
+            return True
+        
+        # Check for metadata artifacts
+        metadata_indicators = [
+            'FILENAME:', 'PAGE:', 'TITLE:', 'DIFFICULTY:', 'CONTENT:',
+            'plant_photosynthesis_courseware.pdf',
+            '13.2 Early Experiments', '13.6 The Electron Transport', 
+            '13.8 The C4 Pathway', '13.9 Photorespiration', '13.10Factors'
+        ]
+        
+        for indicator in metadata_indicators:
+            if indicator in summary:
+                return True
+        
+        # Check if summary is mostly just table of contents or section headers
+        if (len(summary) < 100 and 
+            any(pattern in summary for pattern in ['13.', 'Experiments', 'Transport', 'Pathway'])):
+            return True
+        
+        # Check if summary is just fragmented text
+        words = summary.split()
+        if len(words) < 10:  # Too short to be meaningful
+            return True
+        
+        # Check for incomplete sentences (more than 50% of "words" are single characters or numbers)
+        short_fragments = [word for word in words if len(word) <= 2]
+        if len(short_fragments) > len(words) * 0.5:
+            return True
+        
+        return False
