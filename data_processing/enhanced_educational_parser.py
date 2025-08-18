@@ -143,12 +143,22 @@ class EnhancedEducationalContentParser(EducationalContentParser):
         Returns:
             Enhanced metadata dictionary
         """
+        # Generate a better title if not provided
+        def generate_title_from_filename(filename: str) -> str:
+            """Generate a readable title from filename"""
+            # Remove extension and replace underscores/hyphens with spaces
+            title = os.path.splitext(filename)[0]
+            title = title.replace('_', ' ').replace('-', ' ')
+            # Convert to title case
+            title = title.title()
+            return title
+        
         # Start with basic metadata
         enhanced_metadata = {
             "filename": filename,
             "page": page_num,
             "chunk_index": chunk_idx,
-            "title": file_metadata.get("title", "Unknown Title"),
+            "title": file_metadata.get("title") or generate_title_from_filename(filename),
             "author": file_metadata.get("author", "Unknown Author"),
             "course": file_metadata.get("course", "Unknown Course"),
             "subject": file_metadata.get("subject", "Unknown Subject"),
@@ -202,7 +212,7 @@ class EnhancedEducationalContentParser(EducationalContentParser):
         """
         filename = metadata.get('filename', 'unknown.pdf')
         page = metadata.get('page', 1)
-        title = metadata.get('title', 'Unknown Title')
+        title = metadata.get('title', os.path.splitext(filename)[0].replace('_', ' ').replace('-', ' ').title())
         course = metadata.get('course', 'Unknown Course')
         difficulty = metadata.get('difficulty_level', 'unknown')
         

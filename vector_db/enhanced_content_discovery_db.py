@@ -3,6 +3,7 @@ Enhanced Content Discovery Vector Database
 Integrates hybrid educational enhancement with vector storage
 """
 
+import os
 from .content_discovery_db import ContentDiscoveryVectorDB
 from data_processing.hybrid_enhancer import HybridEducationalEnhancer
 from typing import List, Dict, Any
@@ -91,7 +92,7 @@ class EnhancedContentDiscoveryVectorDB(ContentDiscoveryVectorDB):
         """
         filename = metadata.get('filename', 'unknown.pdf')
         page = metadata.get('page', 1)
-        title = metadata.get('title', 'Unknown Title')
+        title = metadata.get('title') or os.path.splitext(filename)[0].replace('_', ' ').replace('-', ' ').title()
         
         # Extract enhanced information
         learning_objectives = [obj.get('text', '') for obj in enhancement.learning_objectives]
