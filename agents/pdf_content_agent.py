@@ -56,12 +56,10 @@ class PDFContentAgent(BaseAgent):
     def run(self, query: str):
         """Process educational PDF content queries"""
         print(f"📚 PDF Content Agent: Processing educational query...")
-        print(f"🔍 Query: {query}")
         
         # Use the specialized content discovery tool
         result = self.content_tool.run(query)
         
-        print(f"✅ PDF Content Agent: Retrieved educational content")
         return result
 
     def get_collection_stats(self):

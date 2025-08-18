@@ -11,14 +11,14 @@
     "description": "NCERT Class 10 Biology textbook covering fundamental life processes and biological concepts"
   },
   "ncert_biology_class12.pdf": {
-    "title": "NCERT Biology Class 12",
+    "title": "Physical Education/ Relationship with other Subjects",
     "author": "NCERT",
     "course": "Biology", 
     "subject": "Advanced Biology",
     "medium": "English",
     "board": "CBSE",
     "grade": "Class 12",
-    "topics": ["reproduction", "genetics", "evolution", "human health", "biotechnology", "ecology"],
+    "topics": ["Physical Education", "Geography", "History", "Myths", "Mathematics"],
     "description": "NCERT Class 12 Biology textbook covering advanced biological concepts and applications"
   },
   "plant_photosynthesis_courseware.pdf": {

@@ -29,7 +29,6 @@ class ContentDiscoveryTool(BaseTool):
         # Try to get all documents from any vector DB type
         try:
             if hasattr(self.db, 'get_all_documents'):
-                print(f"Tool ({self.name}): Initializing BM25...")
                 documents_data = self.db.get_all_documents()
                 if not documents_data:
                     return None, None
@@ -46,7 +45,8 @@ class ContentDiscoveryTool(BaseTool):
                     tokenized_corpus = [doc.split(" ") for doc in documents]
                     return BM25Okapi(tokenized_corpus), documents_data
         except Exception as e:
-            print(f"Tool ({self.name}): Could not initialize BM25: {e}")
+            # Silently return None if BM25 initialization fails
+            pass
         
         return None, None
 
@@ -252,10 +252,7 @@ Answer the question using the information provided above. Be specific and detail
         try:
             bm25, documents_data = self._initialize_bm25()
 
-            print(f"Tool ({self.name}): Creating embedding for query: '{query}'")
             query_embedding = self.embedding_model.create_embedding(query)
-            
-            print(f"Tool ({self.name}): Searching content database...")
             
             # Use enhanced search if available, otherwise fallback to basic search
             if self._is_enhanced_database() and hasattr(self.db, 'search_enhanced'):
@@ -268,7 +265,6 @@ Answer the question using the information provided above. Be specific and detail
             
             # Optionally enhance with BM25 if available
             if bm25 and documents_data:
-                print(f"Tool ({self.name}): Enhancing with BM25 search...")
                 tokenized_query = query.split(" ")
                 bm25_scores = bm25.get_scores(tokenized_query)
                 
@@ -284,17 +280,45 @@ Answer the question using the information provided above. Be specific and detail
                 
                 final_results = combined_results[:self.top_k]
 
-            if not final_results:
-                error_msg = f"No relevant content found for '{query}'"
+            # Check relevance scores - filter out results with poor similarity
+            RELEVANCE_THRESHOLD = 0.3  # Threshold for similarity scores (0.0-1.0, higher is better)
+            relevant_results = []
+            
+            for result in final_results:
+                # Check if result has a score/distance field
+                score = result.get('score', 0)
+                distance = result.get('distance', None)
+                
+                # Use score if available (higher is better), otherwise convert distance (lower is better)
+                if score > 0:
+                    similarity = score  # Score is already similarity (0-1, higher is better)
+                elif distance is not None:
+                    similarity = 1.0 - distance if distance <= 1.0 else max(0.0, 1.0 - (distance / 2.0))
+                else:
+                    similarity = 0.0
+                
+                # Only include results above threshold
+                if similarity >= RELEVANCE_THRESHOLD:
+                    relevant_results.append(result)
+            
+            if not relevant_results:
+                error_msg = f"No relevant content found for '{query}'. The available content doesn't match your query well enough."
+                
                 if self.return_json:
                     error_response = {
                         "query": query,
                         "status": "error",
-                        "error_code": "no_results",
-                        "error_message": error_msg
+                        "error_code": "low_relevance",
+                        "error_message": error_msg,
+                        "suggestion": "Try a different query or check if relevant content has been loaded",
+                        "threshold": RELEVANCE_THRESHOLD
                     }
                     return json.dumps(error_response, indent=2)
                 return error_msg
+            
+            # Use filtered relevant results
+            # Use the relevant results instead of all results
+            final_results = relevant_results
 
             # Generate recommendations with ACTUAL filenames
             if self._is_enhanced_database():
@@ -320,7 +344,6 @@ Answer the question using the information provided above. Be specific and detail
 
         except Exception as e:
             error_msg = f"Error in content discovery: {str(e)}"
-            print(f"❌ {error_msg}")
             
             if self.return_json:
                 error_response = {

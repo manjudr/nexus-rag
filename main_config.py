@@ -12,7 +12,7 @@ CHUNK_SIZE = 1024
 CHUNK_OVERLAP = 128
 
 # Educational content paths
-CONTENT_DIRECTORY = "data/"  # ✅ Process all PDFs
+CONTENT_DIRECTORY = "data/educational_content/pdfs"  # ✅ Process all PDFs
 METADATA_FILE = "data/educational_content/metadata.json"
 
 # =============================================================================

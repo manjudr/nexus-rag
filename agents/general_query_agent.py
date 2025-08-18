@@ -36,15 +36,51 @@ class GeneralQueryAgent(BaseAgent):
         print(f"✅ General Query Agent initialized with collection: general_content")
 
     def run(self, query: str):
-        """Process general queries"""
+        """Process general queries with fallback to LLM general knowledge"""
         print(f"🔍 General Query Agent: Processing general query...")
-        print(f"🔍 Query: {query}")
         
-        # Use the general content discovery tool
-        result = self.content_tool.run(query)
+        # First try to find relevant content in the database
+        try:
+            result = self.content_tool.run(query)
+            
+            # Check if we got a meaningful result
+            if ("No relevant content found" in str(result) or 
+                "low_relevance" in str(result) or
+                "error" in str(result).lower()):
+                
+                print("🔄 Using LLM general knowledge (no relevant content found)")
+                return self._generate_general_knowledge_response(query)
+            
+            return result
+            
+        except Exception as e:
+            print(f"⚠️ Database search failed, using LLM general knowledge")
+            return self._generate_general_knowledge_response(query)
+    
+    def _generate_general_knowledge_response(self, query: str) -> str:
+        """Generate a response using LLM's general knowledge when no relevant content exists"""
+        prompt = f"""You are a helpful AI assistant. The user is asking about a topic that isn't covered in our specific document database. Please provide a helpful, accurate, and informative answer using your general knowledge.
+
+User Question: {query}
+
+Please provide a comprehensive answer that:
+1. Directly addresses the user's question
+2. Is educational and informative
+3. Includes relevant examples where appropriate
+4. Mentions that this information comes from general knowledge since specific educational content wasn't found in the database
+
+Answer:"""
         
-        print(f"✅ General Query Agent: Retrieved general content")
-        return result
+        try:
+            response = self.llm.generate(prompt)
+            
+            # Add a note about the source
+            footer = "\n\n---\n📝 *Note: This response is based on general AI knowledge since specific educational content for this topic wasn't found in our document database. For more detailed or specialized information, please consult relevant educational resources.*"
+            
+            return response + footer
+            
+        except Exception as e:
+            return f"I apologize, but I'm having trouble generating a response for your query '{query}'. Please try rephrasing your question or check if relevant educational content has been loaded into the system. Error: {str(e)}"
 
     def get_collection_stats(self):
         """Get statistics about the general content collection"""

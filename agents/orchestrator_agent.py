@@ -70,22 +70,38 @@ Agent name:"""
         """Route query to the most appropriate specialized agent"""
         print("🎯 Orchestrator: Analyzing query and choosing best specialized agent...")
         
-        # Debug: Show available agents
-        agent_names = [agent.__class__.__name__ for agent in self.agents]
-        print(f"🔍 Available agents: {agent_names}")
-        
         # Use keyword-based routing for reliability
-        print("🎯 Using keyword-based routing for agent selection")
         chosen_agent = self._simple_router(query)
         
         if chosen_agent:
             agent_name = chosen_agent.__class__.__name__
-            print(f"✅ Orchestrator: Selected '{agent_name}' for this query")
+            print(f"✅ Using {agent_name} for this query")
             
             # Run the selected agent
-            return chosen_agent.run(query)
+            result = chosen_agent.run(query)
+            
+            # Check if PDF agent returned low relevance error
+            if (agent_name == "PDFContentAgent" and 
+                isinstance(result, str) and 
+                ("No relevant content found" in result or "low_relevance" in result)):
+                
+                print("🔄 PDF content not relevant, falling back to General Query Agent")
+                
+                # Find and use General Query Agent as fallback
+                general_agent = None
+                for agent in self.agents:
+                    if "general" in agent.__class__.__name__.lower():
+                        general_agent = agent
+                        break
+                
+                if general_agent:
+                    return general_agent.run(query)
+                else:
+                    return result
+            
+            return result
         else:
-            print("❌ Orchestrator: No suitable agent found")
+            agent_names = [agent.__class__.__name__ for agent in self.agents]
             return {
                 "error": "No suitable agent found for this query",
                 "available_agents": agent_names,
