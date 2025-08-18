@@ -5,8 +5,13 @@ Focuses on educational content processing
 """
 
 import argparse
+import warnings
 import main_config as config
 from typing import List, Dict
+
+# Suppress protobuf version warnings
+warnings.filterwarnings("ignore", message="Protobuf gencode version.*")
+warnings.filterwarnings("ignore", message="pkg_resources is deprecated.*")
 
 # Core imports
 from data_processing.pdf_parser import PDFParser

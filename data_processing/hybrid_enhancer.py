@@ -21,7 +21,10 @@ try:
     LANGEXTRACT_AVAILABLE = True
 except ImportError:
     LANGEXTRACT_AVAILABLE = False
-    print("⚠️ LangExtract not available, using fallback methods")
+    print("⚠️ LangExtract not available, using fallback methods:")
+    print("   📊 Primary Fallback: Azure OpenAI Direct API for educational metadata extraction")
+    print("   📊 Secondary Fallback: Pattern-based text analysis and keyword extraction")
+    print("   🔄 Both methods provide educational metadata without external dependencies")
 
 @dataclass
 class EnhancedEducationalMetadata:
@@ -131,7 +134,7 @@ class HybridEducationalEnhancer:
     def _enhance_with_langextract(self, content: str, filename: str) -> EnhancedEducationalMetadata:
         """Enhance using LangExtract (requires API key) or Azure OpenAI direct"""
         
-        print("🤖 Attempting enhanced extraction with Azure OpenAI...")
+        print("🤖 Using primary fallback: Azure OpenAI Direct API for educational metadata extraction")
         
         # Try direct Azure OpenAI call if LangExtract fails
         try:
@@ -222,7 +225,7 @@ JSON:"""
         # For Azure OpenAI, prefer direct integration over LangExtract due to compatibility issues
         
         # Skip LangExtract entirely for Azure environments, use pattern extraction as fallback
-        print("🔍 Using pattern-based extraction as fallback...")
+        print("� Azure OpenAI failed, using secondary fallback: Pattern-based text analysis and keyword extraction")
         return self._enhance_with_patterns(content, filename)
     
     def _extract_from_text_response(self, response: str, content: str) -> Optional[EnhancedEducationalMetadata]:
@@ -283,7 +286,7 @@ JSON:"""
     def _enhance_with_patterns(self, content: str, filename: str) -> EnhancedEducationalMetadata:
         """Enhance using pattern-based extraction (no API keys required)"""
         
-        print("🔍 Using pattern-based extraction...")
+        print("� Using secondary fallback: Pattern-based text analysis and keyword extraction")
         
         # Extract different types of educational content
         learning_objectives = self._extract_with_patterns(content, 'learning_objectives')
