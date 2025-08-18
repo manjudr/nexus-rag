@@ -1,8 +1,13 @@
 """
-Hybrid Educational Content Enhancer
+Enhanced Educational Content Processor
 Combines rule-based extraction with optional LangExtract integration
-Works without API keys using local models and pattern matching
 """
+
+import os
+import re
+import textwrap
+from typing import Dict, List, Optional
+from dataclasses import dataclass
 
 import re
 import json
@@ -135,28 +140,52 @@ class HybridEducationalEnhancer:
             llm = OpenAIGenerativeModel('gpt-35-turbo')
             
             prompt = f"""
-            You are an educational content analyzer. Extract educational metadata from the following content and return a properly formatted JSON object.
+Extract educational metadata from this content. Return ONLY a JSON object with no extra text or formatting.
 
-            Content:
-            {content[:2000]}  # Limit content length for better processing
-            
-            Extract the following and return ONLY a valid JSON object with no additional text:
-            {{
-                "learning_objectives": ["objective1", "objective2"],
-                "key_concepts": ["concept1", "concept2"],
-                "prerequisites": ["prereq1", "prereq2"],
-                "study_questions": ["question1", "question2"],
-                "examples": ["example1", "example2"],
-                "difficulty_level": "beginner"
-            }}
-            """
+Content: {content[:1500]}
+
+Return exactly this JSON structure (replace with actual extracted data):
+{{"learning_objectives": ["specific objective 1", "specific objective 2"], "key_concepts": ["concept 1", "concept 2"], "prerequisites": [], "study_questions": [], "examples": [], "difficulty_level": "beginner"}}
+
+JSON:"""
             
             response = llm.generate(prompt)
             
-            # Parse the JSON response
+            # Clean the response to extract JSON
             import json
+            import re
+            
+            # Try to extract JSON from the response
+            cleaned_response = response.strip()
+            
+            # Remove common prefixes/suffixes that Azure OpenAI might add
+            prefixes_to_remove = [
+                "Here's the JSON:",
+                "JSON:",
+                "```json",
+                "```",
+                "The extracted metadata is:",
+                "Here is the extracted metadata:"
+            ]
+            
+            for prefix in prefixes_to_remove:
+                if cleaned_response.lower().startswith(prefix.lower()):
+                    cleaned_response = cleaned_response[len(prefix):].strip()
+                if cleaned_response.lower().endswith(prefix.lower()):
+                    cleaned_response = cleaned_response[:-len(prefix)].strip()
+            
+            # Remove markdown code blocks
+            cleaned_response = re.sub(r'^```json\s*', '', cleaned_response)
+            cleaned_response = re.sub(r'\s*```$', '', cleaned_response)
+            cleaned_response = re.sub(r'^```\s*', '', cleaned_response)
+            
+            # Try to find JSON object in the response
+            json_match = re.search(r'\{.*\}', cleaned_response, re.DOTALL)
+            if json_match:
+                cleaned_response = json_match.group(0)
+            
             try:
-                extracted_data = json.loads(response)
+                extracted_data = json.loads(cleaned_response)
                 
                 # Convert to our format
                 metadata = EnhancedEducationalMetadata(
@@ -173,83 +202,83 @@ class HybridEducationalEnhancer:
                 print(f"✅ Azure OpenAI extracted: {len(metadata.learning_objectives)} objectives, {len(metadata.key_concepts)} concepts")
                 return metadata
                 
-            except json.JSONDecodeError:
-                print("⚠️ Failed to parse Azure OpenAI JSON response, trying pattern extraction")
+            except json.JSONDecodeError as e:
+                print(f"⚠️ Failed to parse Azure OpenAI JSON response: {str(e)}")
+                print(f"📝 Raw response: {cleaned_response[:200]}...")
+                
+                # Try simpler extraction using regex patterns on the response
+                simple_metadata = self._extract_from_text_response(response, content)
+                if simple_metadata:
+                    print("✅ Used text-based extraction from Azure OpenAI response")
+                    return simple_metadata
+                
+                print("⚠️ Falling back to pattern extraction")
+                raise e
                 
         except Exception as e:
-            print(f"⚠️ Azure OpenAI direct extraction failed: {str(e)}, trying LangExtract...")
+            print(f"⚠️ Azure OpenAI direct extraction failed: {str(e)}, falling back to pattern extraction")
         
-        # Use LangExtract with Google Gemini (much cheaper than Azure OpenAI)
-        educational_prompt = textwrap.dedent("""\
-            Extract educational metadata from this content including:
-            - Learning objectives and what students will learn
-            - Key concepts, terms, and vocabulary
-            - Prerequisites and background knowledge needed
-            - Study questions and review items
-            - Examples and demonstrations
-            Use exact text from the content for extractions.
-        """)
+        # Use LangExtract as fallback only if Azure OpenAI direct fails
+        # For Azure OpenAI, prefer direct integration over LangExtract due to compatibility issues
         
-        examples = [
-            lx.data.ExampleData(
-                text="Learning Objective: Understand photosynthesis. Key concepts include chlorophyll and carbon dioxide.",
-                extractions=[
-                    lx.data.Extraction(
-                        extraction_class="learning_objective",
-                        extraction_text="Understand photosynthesis",
-                        attributes={"type": "comprehension"}
-                    ),
-                    lx.data.Extraction(
-                        extraction_class="key_concept",
-                        extraction_text="chlorophyll",
-                        attributes={"importance": "high"}
-                    )
-                ]
-            )
-        ]
-        
-        print("🤖 Using LangExtract with Azure OpenAI...")
-        
-        # Check if we have Azure OpenAI environment variables
-        azure_endpoint = os.environ.get('AZURE_OPENAI_ENDPOINT')
-        deployment_name = os.environ.get('AZURE_CHAT_DEPLOYMENT', 'gpt-35-turbo')
-        
-        if azure_endpoint and deployment_name:
-            # Use Azure OpenAI with LangExtract
-            print(f"🔗 LangExtract using Azure endpoint: {azure_endpoint}")
-            print(f"🔗 LangExtract using deployment: {deployment_name}")
+        # Skip LangExtract entirely for Azure environments, use pattern extraction as fallback
+        print("🔍 Using pattern-based extraction as fallback...")
+        return self._enhance_with_patterns(content, filename)
+    
+    def _extract_from_text_response(self, response: str, content: str) -> Optional[EnhancedEducationalMetadata]:
+        """Extract metadata from Azure OpenAI text response using regex patterns"""
+        try:
+            import re
             
-            # Try simpler Azure OpenAI configuration for LangExtract
-            result = lx.extract(
-                text_or_documents=content,
-                prompt_description=educational_prompt,
-                examples=examples,
-                language_model_type=lx.inference.OpenAILanguageModel,
-                model_id=deployment_name,
-                api_key=self.api_key,
-                fence_output=True,
-                use_schema_constraints=False,
-                language_model_params={
-                    "azure_endpoint": azure_endpoint.rstrip('/'),
-                    "azure_deployment": deployment_name,
-                    "api_version": "2024-02-15-preview"
-                }
-            )
-        else:
-            # Fall back to regular OpenAI if Azure variables not set
-            print("🔗 LangExtract using regular OpenAI...")
-            result = lx.extract(
-                text_or_documents=content,
-                prompt_description=educational_prompt,
-                examples=examples,
-                language_model_type=lx.inference.OpenAILanguageModel,
-                model_id="gpt-3.5-turbo",
-                api_key=self.api_key,
-                fence_output=True,
-                use_schema_constraints=False
-            )
-        
-        return self._process_langextract_result(result, filename)
+            # Extract learning objectives from response
+            objectives = []
+            obj_patterns = [
+                r'"learning_objectives":\s*\[(.*?)\]',
+                r'learning objectives?[:\-]\s*(.+?)(?:\n|key concepts|prerequisites)',
+                r'objectives?[:\-]\s*(.+?)(?:\n|key concepts|prerequisites)'
+            ]
+            
+            for pattern in obj_patterns:
+                matches = re.findall(pattern, response, re.IGNORECASE | re.DOTALL)
+                if matches:
+                    # Clean and split the objectives
+                    obj_text = matches[0].replace('"', '').replace("'", '')
+                    objectives = [obj.strip() for obj in obj_text.split(',') if obj.strip()]
+                    break
+            
+            # Extract key concepts
+            concepts = []
+            concept_patterns = [
+                r'"key_concepts":\s*\[(.*?)\]',
+                r'key concepts?[:\-]\s*(.+?)(?:\n|prerequisites|examples)',
+                r'concepts?[:\-]\s*(.+?)(?:\n|prerequisites|examples)'
+            ]
+            
+            for pattern in concept_patterns:
+                matches = re.findall(pattern, response, re.IGNORECASE | re.DOTALL)
+                if matches:
+                    concept_text = matches[0].replace('"', '').replace("'", '')
+                    concepts = [concept.strip() for concept in concept_text.split(',') if concept.strip()]
+                    break
+            
+            # If we found some data, create metadata object
+            if objectives or concepts:
+                return EnhancedEducationalMetadata(
+                    learning_objectives=[{"text": obj, "type": "ai_extracted_text"} for obj in objectives[:3]],
+                    key_concepts=[{"text": concept, "importance": "medium"} for concept in concepts[:5]],
+                    difficulty_level="intermediate",
+                    prerequisites=[],
+                    study_questions=[],
+                    examples=[],
+                    content_sections=[],
+                    extraction_method="azure_openai_text_parsing"
+                )
+            
+            return None
+            
+        except Exception as e:
+            print(f"⚠️ Text-based extraction failed: {str(e)}")
+            return None
     
     def _enhance_with_patterns(self, content: str, filename: str) -> EnhancedEducationalMetadata:
         """Enhance using pattern-based extraction (no API keys required)"""

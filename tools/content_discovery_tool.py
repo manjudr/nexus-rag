@@ -76,6 +76,591 @@ class ContentDiscoveryTool(BaseTool):
         
         return keywords
 
+    def _create_intelligent_summary(self, content: str, max_length: int = 400) -> str:
+        """Create an intelligent summary that preserves sentence structure and meaning."""
+        import re
+        
+        if not content or len(content.strip()) == 0:
+            return "No content available"
+        
+        # Clean and normalize the content
+        clean_content = re.sub(r'\s+', ' ', content.strip())
+        
+        # If content is already short enough, return as is
+        if len(clean_content) <= max_length:
+            return clean_content
+        
+        # Split into sentences while preserving sentence boundaries
+        sentences = re.split(r'(?<=[.!?])\s+', clean_content)
+        
+        if not sentences:
+            # Fallback: if no sentences found, do intelligent word truncation
+            words = clean_content.split()
+            if len(' '.join(words[:max_length//6])) <= max_length:
+                return ' '.join(words[:max_length//6]) + "..."
+            else:
+                return clean_content[:max_length-3] + "..."
+        
+        # Build summary by adding complete sentences
+        summary = ""
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+                
+            # Check if adding this sentence would exceed the limit
+            potential_summary = summary + (" " if summary else "") + sentence
+            
+            if len(potential_summary) <= max_length:
+                summary = potential_summary
+            else:
+                # If we have at least one sentence, stop here
+                if summary:
+                    break
+                # If even the first sentence is too long, truncate it intelligently
+                else:
+                    # Find the last complete phrase or clause before the limit
+                    truncated = sentence[:max_length-3]
+                    # Try to break at a natural point (comma, semicolon, etc.)
+                    natural_breaks = [',', ';', ':', ' and ', ' or ', ' but ', ' with ', ' in ', ' on ', ' at ']
+                    best_break = 0
+                    for break_point in natural_breaks:
+                        last_occurrence = truncated.rfind(break_point)
+                        if last_occurrence > best_break:
+                            best_break = last_occurrence + len(break_point)
+                    
+                    if best_break > len(truncated) * 0.7:  # Only use if it's not too early
+                        summary = truncated[:best_break].strip() + "..."
+                    else:
+                        summary = truncated + "..."
+                    break
+        
+        # Add ellipsis if we had to truncate
+        if len(clean_content) > len(summary) and not summary.endswith("..."):
+            summary = summary + "..."
+        
+        return summary.strip()
+
+    def _create_query_aware_summary(self, content: str, query: str, max_length: int = 400) -> str:
+        """Create a summary that prioritizes content relevant to the user's query."""
+        import re
+        
+        if not content or len(content.strip()) == 0:
+            return "No content available"
+        
+        # Clean and normalize the content
+        clean_content = re.sub(r'\s+', ' ', content.strip())
+        
+        # If content is already short enough, return as is
+        if len(clean_content) <= max_length:
+            return clean_content
+        
+        # Split into sentences
+        sentences = re.split(r'(?<=[.!?])\s+', clean_content)
+        
+        if not sentences:
+            return self._create_intelligent_summary(content, max_length)
+        
+        # Extract key terms from the query
+        query_terms = set()
+        query_lower = query.lower()
+        
+        # Add exact query words
+        query_words = re.findall(r'\b\w+\b', query_lower)
+        query_terms.update(query_words)
+        
+        # Add common question patterns and their targets
+        question_patterns = {
+            r'what is (.+)': r'\1',
+            r'define (.+)': r'\1',
+            r'explain (.+)': r'\1',
+            r'describe (.+)': r'\1',
+            r'how does (.+) work': r'\1',
+            r'tell me about (.+)': r'\1'
+        }
+        
+        for pattern, replacement in question_patterns.items():
+            match = re.search(pattern, query_lower)
+            if match:
+                target_terms = re.findall(r'\b\w+\b', match.group(1))
+                query_terms.update(target_terms)
+        
+        # First, try to find direct definitions
+        definition_summary = self._find_definition_in_content(clean_content, query_terms)
+        if definition_summary and len(definition_summary.strip()) > 30 and len(definition_summary) <= max_length:
+            return definition_summary
+        
+        # Score sentences based on relevance to query
+        sentence_scores = []
+        for i, sentence in enumerate(sentences):
+            sentence_lower = sentence.lower()
+            score = 0
+            
+            # Higher score for sentences that contain query terms
+            for term in query_terms:
+                if term in sentence_lower:
+                    score += 2
+            
+            # Extra points for definition patterns
+            definition_patterns = [
+                r'is defined as', r'is described as', r'refers to', r'means',
+                r'according to', r'dictionary', r'definition', r'is a',
+                r'can be defined', r'is known as', r'is understood as'
+            ]
+            
+            for pattern in definition_patterns:
+                if re.search(pattern, sentence_lower):
+                    score += 3
+            
+            # Bonus for sentences that start with the main topic
+            main_topic = None
+            for term in query_terms:
+                if len(term) > 3 and sentence_lower.startswith(term):
+                    score += 2
+                    main_topic = term
+                    break
+            
+            # Look for question-answer patterns in the content
+            if '?' in sentence and any(term in sentence_lower for term in query_terms):
+                score += 1
+                # Check if the next sentence might be the answer
+                if i + 1 < len(sentences):
+                    next_sentence = sentences[i + 1].lower()
+                    if any(term in next_sentence for term in query_terms):
+                        score += 2
+            
+            sentence_scores.append((score, i, sentence))
+        
+        # Sort by score (descending) and original position
+        sentence_scores.sort(key=lambda x: (-x[0], x[1]))
+        
+        # Build summary starting with highest-scoring sentences
+        summary = ""
+        used_indices = set()
+        
+        for score, idx, sentence in sentence_scores:
+            if score > 0:  # Only include relevant sentences
+                # Check if adding this sentence would exceed limit
+                potential_summary = summary + (" " if summary else "") + sentence
+                
+                if len(potential_summary) <= max_length:
+                    summary = potential_summary
+                    used_indices.add(idx)
+                else:
+                    break
+        
+        # If we don't have enough relevant content, fill with sequential sentences
+        if len(summary) < max_length * 0.7:  # If less than 70% filled
+            for i, sentence in enumerate(sentences):
+                if i not in used_indices:
+                    potential_summary = summary + (" " if summary else "") + sentence
+                    if len(potential_summary) <= max_length:
+                        summary = potential_summary
+                        used_indices.add(i)
+                    else:
+                        break
+        
+        # If still no good summary, fall back to intelligent summary
+        if not summary.strip():
+            return self._create_intelligent_summary(content, max_length)
+        
+        # Add ellipsis if content was truncated
+        if len(clean_content) > len(summary) and not summary.endswith("..."):
+            summary = summary + "..."
+        
+        return summary.strip()
+
+    def _find_definition_in_content(self, content: str, query_terms: set) -> str:
+        """Look for explicit definitions in the content."""
+        import re
+        
+        # Split into sentences
+        sentences = re.split(r'(?<=[.!?])\s+', content)
+        
+        # Definition patterns to look for
+        definition_patterns = [
+            # Direct definition patterns
+            r'(.+)\s+is\s+(.+)',
+            r'(.+)\s+means\s+(.+)',
+            r'(.+)\s+refers to\s+(.+)',
+            r'(.+)\s+is defined as\s+(.+)',
+            r'(.+)\s+is described as\s+(.+)',
+            r'(.+)\s+can be defined as\s+(.+)',
+            r'(.+)\s+is known as\s+(.+)',
+            r'(.+)\s+is called\s+(.+)',
+            # Authority-based definitions
+            r'according to\s+.+,\s*(.+)\s+is\s+(.+)',
+            r'(.+)\s+according to\s+(.+)',
+            # Disease/medical specific patterns
+            r'(.+)\s+is\s+a\s+(disease|virus|condition|syndrome|infection).+',
+            r'(.+)\s+caused by\s+(.+)',
+        ]
+        
+        # Look for sentences that match definition patterns
+        for i, sentence in enumerate(sentences):
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+                
+            sentence_lower = sentence.lower()
+            
+            # Check if this sentence contains any query terms
+            contains_query_term = any(term in sentence_lower for term in query_terms if len(term) > 2)
+            
+            if contains_query_term:
+                for pattern in definition_patterns:
+                    match = re.search(pattern, sentence_lower)
+                    if match:
+                        # Found a definition pattern - return this sentence and potentially the next one
+                        definition = sentence
+                        
+                        # Look for continuation in next sentence if current one seems incomplete
+                        if (i + 1 < len(sentences) and 
+                            (sentence.endswith(',') or len(sentence) < 100)):
+                            next_sentence = sentences[i + 1].strip()
+                            if next_sentence and not next_sentence[0].isupper():
+                                definition += " " + next_sentence
+                        
+                        return definition
+        
+        # Look for question-answer patterns specifically
+        for i, sentence in enumerate(sentences):
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+                
+            sentence_lower = sentence.lower()
+            
+            # If we find a question about our topic, look for the answer in the next sentence(s)
+            if ('?' in sentence and 
+                any(term in sentence_lower for term in query_terms if len(term) > 2)):
+                
+                # Collect the next few sentences as the potential answer
+                answer_parts = []
+                for j in range(i + 1, min(i + 4, len(sentences))):  # Look at next 3 sentences max
+                    next_sentence = sentences[j].strip()
+                    if next_sentence:
+                        answer_parts.append(next_sentence)
+                        # Stop if we hit another question or if we have enough content
+                        if '?' in next_sentence or len(' '.join(answer_parts)) > 300:
+                            break
+                
+                if answer_parts:
+                    return ' '.join(answer_parts)
+        
+        # If no explicit definition found, look for descriptive sentences
+        for sentence in sentences:
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+                
+            sentence_lower = sentence.lower()
+            
+            # Check if this sentence starts with the main query term and has descriptive content
+            main_terms = [term for term in query_terms if len(term) > 3]
+            for term in main_terms:
+                if (sentence_lower.startswith(term) and 
+                    ('is' in sentence_lower or 'are' in sentence_lower) and
+                    len(sentence) > 20):  # Make sure it's not just a fragment
+                    return sentence
+        
+        return ""
+
+    def _create_llm_generated_summary(self, content: str, query: str, max_length: int = 400) -> str:
+        """Use LLM to generate a query-specific summary from the content."""
+        if not content or len(content.strip()) == 0:
+            return "No content available"
+        
+        # Clean and preprocess the content more thoroughly
+        import re
+        clean_content = content.strip()
+        
+        # Remove common PDF artifacts and formatting issues
+        clean_content = re.sub(r'CHAPTER \d+|Page \d+|\d+\s+BIOLOGY|PHOTOSYNTHESIS IN HIGHER PLANTS', '', clean_content, flags=re.IGNORECASE)
+        clean_content = re.sub(r'\d+\.\d+\s+[A-Z][^.]*\?', '', clean_content)  # Remove section headings like "13.1 What do we Know?"
+        clean_content = re.sub(r'^\s*\d+\.\s*', '', clean_content, flags=re.MULTILINE)  # Remove numbered lists
+        clean_content = re.sub(r'\s+', ' ', clean_content)  # Normalize whitespace
+        clean_content = clean_content.strip()
+        
+        # If content is still too short or just headings, return a generic message
+        if len(clean_content) < 50 or re.match(r'^[A-Z\s\d.?]+$', clean_content):
+            return f"Educational content about {query.lower()} is available but requires more detailed reading."
+        
+        # If content is already short enough and clean, return as is
+        if len(clean_content) <= max_length:
+            return clean_content
+        
+        try:
+            # Always try LLM approach first with better preprocessing
+            if self.llm:
+                # Create a very simple, focused prompt
+                prompt = f"""Create a simple, clear definition that answers: "{query}"
+
+Content to summarize:
+{clean_content[:1000]}
+
+Requirements:
+- Write like you're explaining to a student
+- Start with "[Subject] is..." format for "What is" questions  
+- Maximum 2-3 simple sentences
+- No technical jargon or complex terms
+- No chapter references or page numbers
+- Focus only on the core concept
+
+Simple explanation:"""
+
+                try:
+                    response = self.llm.generate(prompt)
+                    
+                    # The response should be a string from the generate method
+                    summary = response.strip() if response else ""
+                    
+                    # Clean up the response thoroughly
+                    summary = re.sub(r'^(Simple explanation:|Concise Summary:|Summary:|Answer:|Response:)\s*', '', summary, flags=re.IGNORECASE)
+                    summary = re.sub(r'\*\*([^*]+)\*\*', r'\1', summary)  # Remove bold formatting
+                    summary = re.sub(r'CHAPTER \d+|Page \d+|\d+\s+BIOLOGY', '', summary, flags=re.IGNORECASE)
+                    summary = re.sub(r'\d+\.\d+\s+', '', summary)  # Remove section numbers
+                    summary = re.sub(r'\s+', ' ', summary)  # Normalize whitespace
+                    summary = summary.strip()
+                    
+                    # Ensure proper capitalization and punctuation
+                    if summary and summary[0].islower():
+                        summary = summary[0].upper() + summary[1:]
+                    
+                    if summary and not summary.endswith(('.', '!', '?', '...')):
+                        summary = summary + '.'
+                    
+                    # Ensure it's not too long
+                    if len(summary) > max_length:
+                        summary = summary[:max_length-3] + "..."
+                    
+                    # Quality check: If the LLM response is poor, try again with simpler approach
+                    if (len(summary) < 30 or 
+                        any(phrase in summary.lower() for phrase in ['chapter', 'section', 'figure', 'table of contents', 'i cannot', 'i don\'t know', 'no information']) or
+                        summary.count('.') > 5):  # Too many sentences
+                        
+                        # Try a second, even simpler prompt
+                        simple_prompt = f"""In one simple sentence, what is {query.replace('What is ', '').replace('Define ', '').replace('?', '')}?
+
+Content: {clean_content[:500]}
+
+One sentence answer:"""
+                        
+                        try:
+                            simple_response = self.llm.generate(simple_prompt)
+                            simple_summary = simple_response.strip() if simple_response else ""
+                            
+                            simple_summary = re.sub(r'^(One sentence answer:|Answer:)\s*', '', simple_summary, flags=re.IGNORECASE)
+                            simple_summary = simple_summary.strip()
+                            
+                            if len(simple_summary) > 20 and len(simple_summary) <= max_length:
+                                return simple_summary
+                        except Exception as e:
+                            pass
+                    
+                    # If we have a good summary, return it
+                    if len(summary) >= 30 and len(summary) <= max_length:
+                        return summary
+                    
+                except Exception as e:
+                    pass
+            
+            # If LLM fails, return a basic processed version
+            sentences = re.split(r'[.!?]+', clean_content)
+            meaningful_sentences = [s.strip() for s in sentences if len(s.strip()) > 20 and not re.match(r'^[A-Z\s\d.?]+$', s.strip())]
+            
+            if meaningful_sentences:
+                result = meaningful_sentences[0]
+                if len(result) > max_length:
+                    result = result[:max_length-3] + "..."
+                return result
+            
+            return f"Content about {query.lower()} is available in the educational material."
+                
+        except Exception as e:
+            return f"Educational information about {query.lower()} is available but needs further review."
+
+    def _create_enhanced_summary_with_context(self, content: str, query: str, result_context: dict = None) -> str:
+        """Enhanced summary generation - LLM-ONLY approach for best quality."""
+        if not content or len(content.strip()) == 0:
+            return "No content available"
+        
+        # FORCE LLM-ONLY APPROACH - No fallbacks to other methods
+        # Always try LLM first and only - better content filtering and prompting
+        llm_summary = self._create_llm_generated_summary(content, query)
+        
+        # Quality validation for LLM summary
+        if (llm_summary and 
+            len(llm_summary) > 30 and 
+            not llm_summary.startswith("Educational content about") and
+            not llm_summary.startswith("Educational information about") and
+            "requires more detailed reading" not in llm_summary and
+            "CHAPTER" not in llm_summary.upper() and
+            not re.match(r'^\s*\d+\.\d+', llm_summary)):  # No section numbers
+            return llm_summary
+        
+        # If LLM summary is poor, try extracting the best sentence from content
+        import re
+        clean_content = content.strip()
+        
+        # More aggressive cleaning
+        clean_content = re.sub(r'CHAPTER \d+.*?(?=\n|\.|$)', '', clean_content, flags=re.IGNORECASE)
+        clean_content = re.sub(r'\d+\.\d+\s+[A-Z][^.]*\?', '', clean_content)
+        clean_content = re.sub(r'Page \d+|\d+\s+BIOLOGY|PHOTOSYNTHESIS IN HIGHER PLANTS', '', clean_content, flags=re.IGNORECASE)
+        clean_content = re.sub(r'^\s*\d+\.\s*', '', clean_content, flags=re.MULTILINE)
+        clean_content = re.sub(r'\s+', ' ', clean_content).strip()
+        
+        # Extract meaningful sentences
+        sentences = re.split(r'[.!?]+', clean_content)
+        good_sentences = []
+        
+        for sentence in sentences:
+            s = sentence.strip()
+            if (len(s) > 20 and 
+                not re.match(r'^[A-Z\s\d.?]+$', s) and  # Not all caps/numbers
+                not re.match(r'^\d+\.\d+', s) and  # Not section number
+                not s.startswith('CHAPTER') and
+                not s.startswith('Page ') and
+                len([word for word in s.split() if word.isupper()]) < len(s.split()) * 0.5):  # Not mostly uppercase
+                good_sentences.append(s)
+        
+        if good_sentences:
+            # Take the first good sentence
+            best_sentence = good_sentences[0]
+            if len(best_sentence) > 400:
+                best_sentence = best_sentence[:397] + "..."
+            return best_sentence
+        
+        # Final fallback
+        return f"Educational content about {query.lower().replace('what is ', '').replace('define ', '')} is available in the course material."
+
+    def _create_semantic_summary(self, content: str, query: str) -> str:
+        """Create summary based on semantic understanding of query intent."""
+        import re
+        
+        # Clean content
+        clean_content = re.sub(r'\s+', ' ', content.strip())
+        query_lower = query.lower()
+        
+        # Identify query intent patterns
+        if any(pattern in query_lower for pattern in ['what is', 'define', 'definition of']):
+            # Definition-seeking query
+            return self._extract_definition_content(clean_content, query)
+        
+        elif any(pattern in query_lower for pattern in ['how does', 'how to', 'explain how']):
+            # Process-seeking query
+            return self._extract_process_content(clean_content, query)
+        
+        elif any(pattern in query_lower for pattern in ['why', 'reason', 'cause']):
+            # Causal explanation query
+            return self._extract_causal_content(clean_content, query)
+        
+        else:
+            # General informational query
+            return self._extract_relevant_sentences(clean_content, query)
+
+    def _extract_definition_content(self, content: str, query: str) -> str:
+        """Extract definitional content from text."""
+        import re
+        sentences = re.split(r'(?<=[.!?])\s+', content)
+        
+        # Look for definition indicators
+        definition_indicators = ['is defined as', 'refers to', 'means', 'is a', 'are a', 'according to']
+        
+        for sentence in sentences:
+            sentence_lower = sentence.lower()
+            if any(indicator in sentence_lower for indicator in definition_indicators):
+                # Found a potential definition
+                return sentence.strip()
+        
+        # If no explicit definition, look for descriptive sentences
+        query_terms = re.findall(r'\w+', query.lower())
+        main_terms = [term for term in query_terms if len(term) > 3]
+        
+        for sentence in sentences:
+            sentence_lower = sentence.lower()
+            if any(term in sentence_lower for term in main_terms):
+                if len(sentence.strip()) > 20:  # Ensure it's substantial
+                    return sentence.strip()
+        
+        return content[:300] + "..." if len(content) > 300 else content
+
+    def _extract_process_content(self, content: str, query: str) -> str:
+        """Extract process or procedural content."""
+        import re
+        
+        # Look for process indicators
+        process_indicators = ['first', 'then', 'next', 'finally', 'step', 'process', 'method', 'procedure']
+        sentences = re.split(r'(?<=[.!?])\s+', content)
+        
+        relevant_sentences = []
+        for sentence in sentences:
+            sentence_lower = sentence.lower()
+            if any(indicator in sentence_lower for indicator in process_indicators):
+                relevant_sentences.append(sentence.strip())
+                if len(' '.join(relevant_sentences)) > 300:
+                    break
+        
+        if relevant_sentences:
+            return ' '.join(relevant_sentences)
+        
+        return content[:300] + "..." if len(content) > 300 else content
+
+    def _extract_causal_content(self, content: str, query: str) -> str:
+        """Extract causal explanation content."""
+        import re
+        
+        # Look for causal indicators
+        causal_indicators = ['because', 'due to', 'caused by', 'results in', 'leads to', 'reason', 'since']
+        sentences = re.split(r'(?<=[.!?])\s+', content)
+        
+        relevant_sentences = []
+        for sentence in sentences:
+            sentence_lower = sentence.lower()
+            if any(indicator in sentence_lower for indicator in causal_indicators):
+                relevant_sentences.append(sentence.strip())
+                if len(' '.join(relevant_sentences)) > 300:
+                    break
+        
+        if relevant_sentences:
+            return ' '.join(relevant_sentences)
+        
+        return content[:300] + "..." if len(content) > 300 else content
+
+    def _extract_relevant_sentences(self, content: str, query: str) -> str:
+        """Extract sentences most relevant to the query."""
+        import re
+        
+        query_terms = set(re.findall(r'\w+', query.lower()))
+        query_terms = {term for term in query_terms if len(term) > 2}
+        
+        sentences = re.split(r'(?<=[.!?])\s+', content)
+        scored_sentences = []
+        
+        for sentence in sentences:
+            sentence_lower = sentence.lower()
+            score = sum(1 for term in query_terms if term in sentence_lower)
+            if score > 0:
+                scored_sentences.append((score, sentence.strip()))
+        
+        # Sort by relevance score
+        scored_sentences.sort(key=lambda x: x[0], reverse=True)
+        
+        # Combine top sentences
+        result_sentences = []
+        total_length = 0
+        for score, sentence in scored_sentences:
+            if total_length + len(sentence) <= 350:
+                result_sentences.append(sentence)
+                total_length += len(sentence)
+            else:
+                break
+        
+        if result_sentences:
+            return ' '.join(result_sentences)
+        
+        return content[:300] + "..." if len(content) > 300 else content
+
     def _is_enhanced_database(self) -> bool:
         """Check if the database supports enhanced content discovery features."""
         # Check if it's the enhanced version specifically, not just the base ContentDiscoveryVectorDB
@@ -133,8 +718,8 @@ Answer the question using the information provided above. Be specific and detail
                 key_concepts = result.get('key_concepts', [])
                 clean_content = result.get('clean_content', result.get('content', ''))
                 
-                # Generate summary from clean content
-                summary = clean_content[:200] + "..." if len(clean_content) > 200 else clean_content.strip()
+                # Generate LLM-based summary from clean content
+                summary = self._create_llm_generated_summary(clean_content, query)
                 
                 # Use key concepts as keywords, fallback to content extraction
                 keywords = key_concepts if key_concepts else self._extract_keywords_from_content(clean_content)
@@ -184,7 +769,7 @@ Answer the question using the information provided above. Be specific and detail
                 if file_key not in seen_files:
                     seen_files.add(file_key)
                     
-                    summary = content[:200] + "..." if len(content) > 200 else content.strip()
+                    summary = self._create_llm_generated_summary(content, query)
                     
                     # Generate title from filename
                     title = filename.replace('.pdf', '').replace('_', ' ').title()
@@ -281,7 +866,7 @@ Answer the question using the information provided above. Be specific and detail
                 final_results = combined_results[:self.top_k]
 
             # Check relevance scores - filter out results with poor similarity
-            RELEVANCE_THRESHOLD = 0.3  # Threshold for similarity scores (0.0-1.0, higher is better)
+            RELEVANCE_THRESHOLD = 0.2  # Lower threshold for broader content matching
             relevant_results = []
             
             for result in final_results:

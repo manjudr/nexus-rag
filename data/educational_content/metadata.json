@@ -10,16 +10,16 @@
     "topics": ["life processes", "control and coordination", "reproduction", "heredity", "natural resources"],
     "description": "NCERT Class 10 Biology textbook covering fundamental life processes and biological concepts"
   },
-  "ncert_biology_class12.pdf": {
-    "title": "Physical Education/ Relationship with other Subjects",
+  "Physical Education: Relationship with othER Subjects.pdf": {
+    "title": "Physical Education: Relationship with other Subjects",
     "author": "NCERT",
-    "course": "Biology", 
-    "subject": "Advanced Biology",
+    "course": "Physical Education",
+    "subject": "Physical Education and Interdisciplinary Studies",
     "medium": "English",
-    "board": "CBSE",
-    "grade": "Class 12",
-    "topics": ["Physical Education", "Geography", "History", "Myths", "Mathematics"],
-    "description": "NCERT Class 12 Biology textbook covering advanced biological concepts and applications"
+    "board": "NCERT",
+    "grade": "General",
+    "topics": ["physical education", "geography", "history", "mathematics", "interdisciplinary studies", "health education"],
+    "description": "Educational material on how Physical Education relates to and integrates with other academic subjects"
   },
   "plant_photosynthesis_courseware.pdf": {
     "title": "Plant Photosynthesis Courseware",
