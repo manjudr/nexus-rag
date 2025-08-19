@@ -383,11 +383,12 @@ class ContentDiscoveryTool(BaseTool):
         clean_content = re.sub(r'DIFFICULTY:[^\\s]*', '', clean_content, flags=re.IGNORECASE)  # Remove DIFFICULTY lines
         clean_content = re.sub(r'^[A-Z]+:[^\\n]*\\n', '', clean_content, flags=re.MULTILINE)  # Remove metadata lines
         
-        # Remove common PDF artifacts and formatting issues
-        clean_content = re.sub(r'CHAPTER \d+|Page \d+|\d+\s+BIOLOGY|PHOTOSYNTHESIS IN HIGHER PLANTS', '', clean_content, flags=re.IGNORECASE)
+        # Remove common PDF artifacts and formatting issues (GENERIC patterns)
+        clean_content = re.sub(r'CHAPTER \d+|Page \d+|\d+\s+[A-Z]+(?:\s+[A-Z]+)*', '', clean_content, flags=re.IGNORECASE)  # Remove chapter headers and subject titles
         clean_content = re.sub(r'\d+\.\d+\s+[A-Z][^.]*\?', '', clean_content)  # Remove section headings like "13.1 What do we Know?"
         clean_content = re.sub(r'^\s*\d+\.\s*', '', clean_content, flags=re.MULTILINE)  # Remove numbered lists
-        clean_content = re.sub(r'\d{4}-\d{2}', '', clean_content)  # Remove years like "2020-21"
+        clean_content = re.sub(r'\d{4}-\d{2}', '', clean_content)  # Remove academic years like "2020-21"
+        clean_content = re.sub(r'\b[A-Z]{2,}\s+[A-Z]{2,}\b', '', clean_content)  # Remove patterns like "HIGHER PLANTS", "CELL BIOLOGY" etc.
         clean_content = re.sub(r'\s+', ' ', clean_content)  # Normalize whitespace
         clean_content = clean_content.strip()
         
@@ -395,10 +396,11 @@ class ContentDiscoveryTool(BaseTool):
         if len(clean_content) < 50 or re.match(r'^[A-Z\s\d.?]+$', clean_content):
             return f"Educational content about {query.lower()} is available but requires more detailed reading."
         
-        # Check if content is mostly metadata or table of contents
+        # Check if content is mostly metadata or table of contents (GENERIC detection)
         if (len(clean_content) < 150 and 
             ('FILENAME:' in content or 'PAGE:' in content or 'TITLE:' in content or 
-             any(indicator in content for indicator in ['13.2 Early', '13.6 The Electron', '13.8 The C4', '13.9 Photo', '13.10Factors']))):
+             re.search(r'\d+\.\d+\s+[A-Z][^.]*', content) or  # Generic section pattern like "13.2 Title"
+             re.search(r'Table of Contents|INDEX|BIBLIOGRAPHY', content, re.IGNORECASE))):
             return f"This appears to be a table of contents or chapter overview for {query.lower()} content."
         
         # If content is already short enough and clean, return as is
@@ -511,11 +513,12 @@ Summary based on the actual content:"""
         import re
         clean_content = content.strip()
         
-        # More aggressive cleaning
+        # More aggressive cleaning (GENERIC patterns)
         clean_content = re.sub(r'CHAPTER \d+.*?(?=\n|\.|$)', '', clean_content, flags=re.IGNORECASE)
         clean_content = re.sub(r'\d+\.\d+\s+[A-Z][^.]*\?', '', clean_content)
-        clean_content = re.sub(r'Page \d+|\d+\s+BIOLOGY|PHOTOSYNTHESIS IN HIGHER PLANTS', '', clean_content, flags=re.IGNORECASE)
+        clean_content = re.sub(r'Page \d+|\d+\s+[A-Z]+(?:\s+[A-Z]+)*', '', clean_content, flags=re.IGNORECASE)  # Generic subject headers
         clean_content = re.sub(r'^\s*\d+\.\s*', '', clean_content, flags=re.MULTILINE)
+        clean_content = re.sub(r'\b[A-Z]{2,}\s+[A-Z]{2,}\b', '', clean_content)  # Remove all-caps headers
         clean_content = re.sub(r'\s+', ' ', clean_content).strip()
         
         # Extract meaningful sentences
@@ -964,32 +967,42 @@ Answer the question using the information provided above. Be specific and detail
             return error_msg
 
     def _identify_content_topic(self, content: str) -> str:
-        """Identify what the content is actually about based on keywords."""
+        """Identify what the content is actually about based on keywords - GENERIC approach."""
         import re
         
         content_lower = content.lower()
         
-        # Common topic keywords
-        topic_keywords = {
-            'physical education': ['physical education', 'sports', 'exercise', 'fitness', 'physical activity'],
-            'biology': ['biology', 'photosynthesis', 'plant', 'cell', 'organism', 'life'],
-            'health': ['health', 'medical', 'disease', 'treatment', 'medicine'],
-            'mathematics': ['mathematics', 'equation', 'formula', 'calculation', 'number'],
-            'chemistry': ['chemistry', 'chemical', 'reaction', 'compound', 'element'],
-            'physics': ['physics', 'force', 'energy', 'motion', 'gravity'],
-            'education': ['education', 'learning', 'teaching', 'curriculum', 'student']
+        # Extract most frequent meaningful words (dynamic topic detection)
+        words = re.findall(r'\b[a-zA-Z]{4,}\b', content_lower)
+        
+        # Filter out common stop words
+        stop_words = {
+            'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
+            'this', 'that', 'these', 'those', 'a', 'an', 'is', 'are', 'was', 'were', 'be',
+            'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would',
+            'could', 'should', 'may', 'might', 'can', 'must', 'shall', 'about', 'into',
+            'through', 'during', 'before', 'after', 'above', 'below', 'up', 'down', 'out',
+            'off', 'over', 'under', 'again', 'further', 'then', 'once', 'also', 'such',
+            'very', 'more', 'most', 'some', 'any', 'many', 'much', 'each', 'every'
         }
         
-        for topic, keywords in topic_keywords.items():
-            if any(keyword in content_lower for keyword in keywords):
-                return topic
+        meaningful_words = [word for word in words if word not in stop_words and len(word) > 3]
         
-        # Extract the first few meaningful words as a fallback
-        words = re.findall(r'\b[a-zA-Z]{4,}\b', content)
-        if words:
-            return ' '.join(words[:3]).lower()
+        if not meaningful_words:
+            return "general content"
         
-        return "general content"
+        # Count word frequency and get top terms
+        from collections import Counter
+        word_counts = Counter(meaningful_words)
+        top_words = [word for word, count in word_counts.most_common(5)]
+        
+        # Use top words to describe the topic
+        if len(top_words) >= 2:
+            return f"{top_words[0]} and {top_words[1]} studies"
+        elif len(top_words) >= 1:
+            return f"{top_words[0]} studies"
+        else:
+            return "general content"
     
     def _is_content_relevant_to_query(self, content: str, query: str) -> bool:
         """Check if content actually contains information relevant to the query BEFORE calling LLM."""
@@ -1028,83 +1041,137 @@ Answer the question using the information provided above. Be specific and detail
         if query_categories.intersection(content_categories):
             return True
         
-        # Final check: look for topic-specific indicators
-        topic_indicators = {
-            'coronavirus': ['virus', 'covid', 'pandemic', 'infection', 'disease', 'health', 'prevention', 'mask', 'sanitizer', 'hygiene'],
-            'prevention': ['prevent', 'avoid', 'protect', 'safety', 'precaution', 'measure', 'step', 'method'],
-            'photosynthesis': ['plant', 'leaf', 'light', 'carbon', 'oxygen', 'chlorophyll', 'energy', 'glucose'],
-            'biology': ['cell', 'organism', 'life', 'gene', 'dna', 'evolution', 'species'],
-            'education': ['learn', 'teach', 'study', 'school', 'class', 'student', 'curriculum']
-        }
-        
+        # Final check: Dynamic semantic relationship detection
+        # Instead of hardcoded topic indicators, use semantic word analysis
         for main_term in meaningful_query_terms:
-            if main_term in topic_indicators:
-                indicators = topic_indicators[main_term]
-                if any(indicator in content_lower for indicator in indicators):
+            # Look for semantic relationships using word patterns
+            semantic_patterns = [
+                rf'\b{main_term}\w*\b',  # Variations of the term (e.g., prevent -> prevention)
+                rf'\b\w*{main_term}\w*\b',  # Words containing the term
+            ]
+            
+            for pattern in semantic_patterns:
+                if re.search(pattern, content_lower):
+                    return True
+            
+            # Look for definitional patterns around the term
+            definition_patterns = [
+                rf'{main_term}\s+(is|are|means|refers)',
+                rf'(definition|meaning)\s+.*{main_term}',
+                rf'{main_term}.*\b(process|method|technique|approach|system)\b'
+            ]
+            
+            for pattern in definition_patterns:
+                if re.search(pattern, content_lower):
                     return True
         
         return False
     
     def _categorize_query(self, query: str) -> set:
-        """Categorize query into topic areas."""
+        """Categorize query into topic areas - GENERIC approach using dynamic keyword extraction."""
+        import re
+        
         categories = set()
         
-        category_keywords = {
-            'health': ['health', 'disease', 'medical', 'virus', 'infection', 'prevention', 'coronavirus', 'covid'],
-            'biology': ['biology', 'plant', 'animal', 'cell', 'photosynthesis', 'organism', 'life'],
-            'education': ['education', 'learning', 'teaching', 'study', 'curriculum'],
-            'physics': ['physics', 'force', 'energy', 'motion', 'gravity'],
-            'chemistry': ['chemistry', 'chemical', 'reaction', 'compound'],
-            'mathematics': ['math', 'calculation', 'equation', 'formula', 'number'],
-            'sports': ['sports', 'exercise', 'fitness', 'physical activity', 'game']
+        # Extract meaningful terms from query
+        query_terms = re.findall(r'\b[a-zA-Z]{3,}\b', query.lower())
+        
+        # Remove common question words
+        stop_words = {'what', 'how', 'why', 'when', 'where', 'who', 'which', 'tell', 'explain', 'define', 'describe'}
+        meaningful_terms = [term for term in query_terms if term not in stop_words]
+        
+        # Use the meaningful terms as categories
+        for term in meaningful_terms:
+            categories.add(term)
+        
+        # Add some broad academic categories based on common educational terms
+        academic_indicators = {
+            'science': ['science', 'scientific', 'research', 'study', 'analysis', 'experiment'],
+            'mathematics': ['math', 'mathematical', 'equation', 'formula', 'calculation', 'number'],
+            'language': ['language', 'literature', 'writing', 'reading', 'grammar', 'text'],
+            'history': ['history', 'historical', 'past', 'ancient', 'period', 'era'],
+            'social': ['social', 'society', 'culture', 'community', 'people', 'human']
         }
         
-        for category, keywords in category_keywords.items():
-            if any(keyword in query for keyword in keywords):
+        for category, indicators in academic_indicators.items():
+            if any(indicator in query.lower() for indicator in indicators):
                 categories.add(category)
         
-        return categories
+        return categories if categories else {'general'}
     
     def _categorize_content(self, content: str) -> set:
-        """Categorize content into topic areas."""
-        categories = set()
+        """Categorize content into topic areas - GENERIC approach using dynamic analysis."""
+        import re
+        from collections import Counter
         
-        category_keywords = {
-            'health': ['health', 'disease', 'medical', 'virus', 'infection', 'prevention', 'medicine'],
-            'biology': ['biology', 'plant', 'animal', 'cell', 'photosynthesis', 'organism', 'life', 'species'],
-            'education': ['education', 'learning', 'teaching', 'study', 'curriculum', 'student', 'class'],
-            'physics': ['physics', 'force', 'energy', 'motion', 'gravity', 'velocity'],
-            'chemistry': ['chemistry', 'chemical', 'reaction', 'compound', 'element'],
-            'mathematics': ['mathematics', 'calculation', 'equation', 'formula', 'number'],
-            'sports': ['sports', 'exercise', 'fitness', 'physical activity', 'game', 'physical education']
+        categories = set()
+        content_lower = content.lower()
+        
+        # Extract meaningful words (nouns and adjectives typically)
+        words = re.findall(r'\b[a-zA-Z]{4,}\b', content_lower)
+        
+        # Filter out common stop words
+        stop_words = {
+            'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
+            'this', 'that', 'these', 'those', 'a', 'an', 'is', 'are', 'was', 'were', 'be',
+            'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would',
+            'could', 'should', 'may', 'might', 'can', 'must', 'shall', 'about', 'into',
+            'through', 'during', 'before', 'after', 'above', 'below', 'up', 'down', 'out',
+            'off', 'over', 'under', 'again', 'further', 'then', 'once', 'also', 'such',
+            'very', 'more', 'most', 'some', 'any', 'many', 'much', 'each', 'every',
+            'page', 'chapter', 'section', 'content', 'text', 'document', 'file'
         }
         
-        for category, keywords in category_keywords.items():
-            if any(keyword in content for keyword in keywords):
-                categories.add(category)
+        meaningful_words = [word for word in words if word not in stop_words and len(word) > 3]
         
-        return categories
+        if not meaningful_words:
+            return {'general'}
+        
+        # Count word frequency and get top terms as categories
+        word_counts = Counter(meaningful_words)
+        top_words = [word for word, count in word_counts.most_common(10) if count > 1]
+        
+        # Add frequent words as categories
+        for word in top_words[:5]:  # Top 5 most frequent words
+            categories.add(word)
+        
+        # Look for broad academic domain indicators (more generic patterns)
+        domain_patterns = {
+            'technical': r'\b(system|process|method|technique|procedure|algorithm|technology)\b',
+            'scientific': r'\b(research|study|analysis|experiment|data|result|conclusion|hypothesis)\b',
+            'educational': r'\b(learn|teach|understand|knowledge|skill|concept|principle|theory)\b',
+            'practical': r'\b(use|apply|implement|practice|example|case|solution|problem)\b'
+        }
+        
+        for domain, pattern in domain_patterns.items():
+            if re.search(pattern, content_lower):
+                categories.add(domain)
+        
+        return categories if categories else {'general'}
     
     def _is_poor_quality_summary(self, summary: str) -> bool:
         """Check if a summary contains metadata artifacts or is of poor quality."""
         if not summary:
             return True
         
-        # Check for metadata artifacts
+        # Generic metadata indicators (not content-specific)
         metadata_indicators = [
-            'FILENAME:', 'PAGE:', 'TITLE:', 'DIFFICULTY:', 'CONTENT:',
-            'plant_photosynthesis_courseware.pdf',
-            '13.2 Early Experiments', '13.6 The Electron Transport', 
-            '13.8 The C4 Pathway', '13.9 Photorespiration', '13.10Factors'
+            'FILENAME:', 'PAGE:', 'TITLE:', 'DIFFICULTY:', 'CONTENT:', 'CHAPTER',
+            'Table of Contents', 'INDEX:', 'BIBLIOGRAPHY:', 'REFERENCES:'
         ]
         
         for indicator in metadata_indicators:
             if indicator in summary:
                 return True
         
-        # Check if summary is mostly just table of contents or section headers
+        # Check for section numbering patterns (generic)
+        import re
+        if re.search(r'\b\d+\.\d+\s+[A-Z][^.]*\b', summary):  # Pattern like "13.2 Title"
+            return True
+        
+        # Check if summary is mostly just numbers and short words (table of contents style)
         if (len(summary) < 100 and 
-            any(pattern in summary for pattern in ['13.', 'Experiments', 'Transport', 'Pathway'])):
+            re.search(r'^\s*\d+\..*\d+\..*\d+\.', summary)):  # Multiple numbered sections
             return True
         
         # Check if summary is just fragmented text
@@ -1116,5 +1183,34 @@ Answer the question using the information provided above. Be specific and detail
         short_fragments = [word for word in words if len(word) <= 2]
         if len(short_fragments) > len(words) * 0.5:
             return True
+        
+        # Check if it's mostly uppercase (often indicates headers/metadata)
+        uppercase_words = [word for word in words if word.isupper() and len(word) > 2]
+        if len(uppercase_words) > len(words) * 0.4:  # More than 40% uppercase
+            return True
+        
+        # Additional checks for better quality detection (more balanced)
+        # Check for repeated section numbers or table of contents patterns
+        section_numbers = re.findall(r'\b\d+\.\d*\b', summary)
+        if len(section_numbers) > 5:  # Too many section numbers indicates TOC (increased threshold)
+            return True
+        
+        # Check if summary contains filename artifacts
+        if re.search(r'\w+_\w+_courseware\.pdf', summary, re.IGNORECASE):
+            return True
+        
+        # Check if summary starts with filename pattern or broken text
+        if re.match(r'^[a-z]{1,3}\s+[a-z_]+\.pdf', summary, re.IGNORECASE):
+            return True
+        
+        # Check for garbled text patterns (more specific)
+        garbled_patterns = [
+            r'^[a-z]{1,2}\s+[a-z_]+\.pdf',  # Broken filename start
+            r'\b[a-z]\s+[a-z]\s+[a-z]\s+[a-z]\b',  # Single letter fragments
+        ]
+        
+        for pattern in garbled_patterns:
+            if re.search(pattern, summary, re.IGNORECASE):
+                return True
         
         return False
