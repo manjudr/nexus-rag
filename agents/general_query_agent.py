@@ -10,10 +10,11 @@ class GeneralQueryAgent(BaseAgent):
     Uses general content database for basic question answering
     """
     
-    def __init__(self, db_path: str, embedding_model: EmbeddingModel, llm: GenerativeModel, top_k: int = 5):
+    def __init__(self, db_path: str, embedding_model: EmbeddingModel, llm: GenerativeModel, top_k: int = 5, return_json: bool = False):
         self.embedding_model = embedding_model
         self.llm = llm
         self.top_k = top_k
+        self.return_json = return_json
         
         # Create general content database
         self.vector_db = ContentDiscoveryVectorDB(
@@ -30,7 +31,7 @@ class GeneralQueryAgent(BaseAgent):
             name="General Content Discovery",
             description="Handles general questions and basic content discovery across all content types",
             top_k=top_k,
-            return_json=False
+            return_json=self.return_json
         )
         
         print(f"✅ General Query Agent initialized with collection: general_content")

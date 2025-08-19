@@ -12,10 +12,11 @@ class PDFContentAgent(BaseAgent):
     Uses dedicated PDF vector database and educational enhancement tools
     """
     
-    def __init__(self, db_path: str, embedding_model: EmbeddingModel, llm: GenerativeModel, top_k: int = 5):
+    def __init__(self, db_path: str, embedding_model: EmbeddingModel, llm: GenerativeModel, top_k: int = 5, return_json: bool = False):
         self.embedding_model = embedding_model
         self.llm = llm
         self.top_k = top_k
+        self.return_json = return_json
         
         # Get configuration - centralized in MODELS section
         current_models = config.MODELS[config.MODEL_PROVIDER]
@@ -48,7 +49,7 @@ class PDFContentAgent(BaseAgent):
             name="PDF Educational Content Discovery",
             description="Discovers and analyzes educational content from PDF documents with enhanced metadata",
             top_k=top_k,
-            return_json=False
+            return_json=self.return_json
         )
         
         print(f"✅ PDF Content Agent initialized with collection: pdf_educational_content")

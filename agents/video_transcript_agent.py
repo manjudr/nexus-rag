@@ -11,10 +11,11 @@ class VideoTranscriptAgent(BaseAgent):
     This is prepared for future implementation
     """
     
-    def __init__(self, db_path: str, embedding_model: EmbeddingModel, llm: GenerativeModel, top_k: int = 5):
+    def __init__(self, db_path: str, embedding_model: EmbeddingModel, llm: GenerativeModel, top_k: int = 5, return_json: bool = False):
         self.embedding_model = embedding_model
         self.llm = llm
         self.top_k = top_k
+        self.return_json = return_json
         
         # Create dedicated video transcript database
         self.vector_db = ContentDiscoveryVectorDB(
@@ -31,7 +32,7 @@ class VideoTranscriptAgent(BaseAgent):
             name="Video Transcript Discovery",
             description="Discovers and analyzes content from video transcripts with speaker detection and temporal context",
             top_k=top_k,
-            return_json=False
+            return_json=self.return_json
         )
         
         print(f"✅ Video Transcript Agent initialized with collection: video_transcripts")
