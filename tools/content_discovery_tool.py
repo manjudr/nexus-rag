@@ -798,6 +798,7 @@ Answer the question using the information provided above. Be specific and detail
                     subject = file_metadata.get('subject', 'General')
                     grade = file_metadata.get('grade', 'General')
                     board = file_metadata.get('board', 'General')
+                    artifact_url = file_metadata.get('artifact_url')  # Get download link
                 else:
                     # Fallback to dynamic generation
                     course_id = f"generated_{filename.replace('.pdf', '').replace(' ', '_').lower()}"
@@ -812,6 +813,7 @@ Answer the question using the information provided above. Be specific and detail
                     subject = "General"
                     grade = "General" 
                     board = "General"
+                    artifact_url = None  # No download link available
                 
                 file_key = f"{filename}_page_{page}"
                 if file_key not in seen_files:
@@ -835,7 +837,8 @@ Answer the question using the information provided above. Be specific and detail
                         "difficulty_level": difficulty,
                         "learning_objectives": learning_objectives[:3],  # Top 3 objectives
                         "key_concepts": key_concepts[:5],  # Top 5 concepts
-                        "relevance_score": round(1.0 - (i * 0.1), 2)  # Decreasing relevance
+                        "relevance_score": round(1.0 - (i * 0.1), 2),  # Decreasing relevance
+                        "artifact_url": artifact_url  # Download link for the resource
                     }
                     recommendations.append(recommendation)
             else:
@@ -880,6 +883,7 @@ Answer the question using the information provided above. Be specific and detail
                         subject = file_metadata.get('subject', 'General')
                         grade = file_metadata.get('grade', 'General')
                         board = file_metadata.get('board', 'General')
+                        artifact_url = file_metadata.get('artifact_url')  # Get download link
                     else:
                         # Fallback to dynamic generation
                         course_id = f"generated_{filename.replace('.pdf', '').replace(' ', '_').lower()}"
@@ -890,6 +894,7 @@ Answer the question using the information provided above. Be specific and detail
                         subject = "General"
                         grade = "General"
                         board = "General"
+                        artifact_url = None  # No download link available
                     
                     recommendation = {
                         "filename": filename,  # ACTUAL filename from database
@@ -906,7 +911,8 @@ Answer the question using the information provided above. Be specific and detail
                         "section": f"Page {page}",
                         "keywords": matched_keywords,
                         "summary": summary,
-                        "relevance_score": round(1.0 - (i * 0.1), 2)  # Decreasing relevance
+                        "relevance_score": round(1.0 - (i * 0.1), 2),  # Decreasing relevance
+                        "artifact_url": artifact_url  # Download link for the resource
                     }
                     recommendations.append(recommendation)
         

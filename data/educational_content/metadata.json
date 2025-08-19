@@ -11,7 +11,8 @@
     "board": "NCERT",
     "grade": "General",
     "topics": ["physical education", "geography", "history", "mathematics", "interdisciplinary studies", "health education"],
-    "description": "Educational material on how Physical Education relates to and integrates with other academic subjects"
+    "description": "Educational material on how Physical Education relates to and integrates with other academic subjects",
+    "artifact_url": "https://cdn.sunbird.org/content/physical-education-interdisciplinary.pdf"
   },
   "Physical Education: Relationship with othER Subjects.pdf": {
     "course_id": "do_62657369627673",
@@ -25,7 +26,8 @@
     "board": "NCERT",
     "grade": "General",
     "topics": ["physical education", "geography", "history", "mathematics", "interdisciplinary studies", "health education"],
-    "description": "Educational material on how Physical Education relates to and integrates with other academic subjects"
+    "description": "Educational material on how Physical Education relates to and integrates with other academic subjects",
+    "artifact_url": "https://cdn.sunbird.org/content/physical-education-interdisciplinary.pdf"
   },
   "ncert_biology_class10.pdf": {
     "course_id": "do_11329906829099827212",
@@ -39,7 +41,8 @@
     "board": "CBSE",
     "grade": "Class 10",
     "topics": ["life processes", "control and coordination", "reproduction", "heredity", "natural resources"],
-    "description": "NCERT Class 10 Biology textbook covering fundamental life processes and biological concepts"
+    "description": "NCERT Class 10 Biology textbook covering fundamental life processes and biological concepts",
+    "artifact_url": "https://ncert.nic.in/textbook/pdf/kebo110.pdf"
   },
   "plant_photosynthesis_courseware.pdf": {
     "course_id": "do_33445566778899",
@@ -53,6 +56,7 @@
     "board": "University",
     "grade": "Undergraduate",
     "topics": ["photosynthesis", "light reactions", "carbon fixation", "chlorophyll", "plant metabolism"],
-    "description": "Comprehensive courseware on plant photosynthesis processes and mechanisms"
+    "description": "Comprehensive courseware on plant photosynthesis processes and mechanisms",
+    "artifact_url": "https://cdn.sunbird.org/content/botany/plant-photosynthesis-courseware.pdf"
   }
 }

@@ -45,6 +45,7 @@ class ContentRecommendation(BaseModel):
     keywords: List[str]
     summary: str
     relevance_score: float
+    artifact_url: Optional[str] = None  # Download link for the resource
 
 class QueryResponse(BaseModel):
     query: str
@@ -213,7 +214,8 @@ async def query_content(request: QueryRequest):
                     page_number=rec.get("page_number", 1),
                     keywords=rec.get("keywords", [])[:5],  # Limit keywords
                     summary=rec.get("summary", "No summary available"),
-                    relevance_score=rec.get("relevance_score", 0.0)
+                    relevance_score=rec.get("relevance_score", 0.0),
+                    artifact_url=rec.get("artifact_url")  # Include download link
                 )
                 recommendations.append(recommendation)
         
