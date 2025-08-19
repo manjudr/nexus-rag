@@ -419,15 +419,19 @@ class ContentDiscoveryTool(BaseTool):
         for term in main_query_terms:
             if term in content_lower:
                 relevant_terms_found += 1
+            else:
+                # Check for fuzzy matches (typos/variations)
+                if self._check_fuzzy_match(term, content_lower):
+                    relevant_terms_found += 1
         
-        # If content doesn't contain the main query terms, don't hallucinate
+        # If content doesn't contain the main query terms (including fuzzy matches), don't hallucinate
         if relevant_terms_found == 0 and main_query_terms:
             return f"This content discusses {self._identify_content_topic(clean_content)} but does not contain information about {' '.join(main_query_terms)}."
         
         try:
             # Always try LLM approach first with better preprocessing
             if self.llm:
-                # Create a very simple, focused prompt that emphasizes accuracy
+                # Create a very simple, focused prompt that emphasizes accuracy and handles variations
                 prompt = f"""Based ONLY on the content provided below, create a brief summary that relates to: "{query}"
 
 Content:
@@ -435,6 +439,7 @@ Content:
 
 IMPORTANT INSTRUCTIONS:
 - ONLY use information that is actually present in the content above
+- If the content contains information about the topic (even with slight spelling variations), summarize it
 - If the content does not contain information about the query topic, say "This content does not discuss [topic]"
 - Do NOT make up or invent any information
 - Write like you're explaining to a student
@@ -452,7 +457,7 @@ Summary based on the actual content:"""
                     # Clean up the response thoroughly
                     summary = re.sub(r'^(Summary based on the actual content:|Simple explanation:|Concise Summary:|Summary:|Answer:|Response:)\s*', '', summary, flags=re.IGNORECASE)
                     summary = re.sub(r'\*\*([^*]+)\*\*', r'\1', summary)  # Remove bold formatting
-                    summary = re.sub(r'CHAPTER \d+|Page \d+|\d+\s+BIOLOGY', '', summary, flags=re.IGNORECASE)
+                    summary = re.sub(r'CHAPTER \d+|Page \d+', '', summary, flags=re.IGNORECASE)  # Remove generic chapter/page references
                     summary = re.sub(r'\d+\.\d+\s+', '', summary)  # Remove section numbers
                     summary = re.sub(r'\s+', ' ', summary)  # Normalize whitespace
                     summary = summary.strip()
@@ -1023,14 +1028,24 @@ Answer the question using the information provided above. Be specific and detail
         if not meaningful_query_terms:
             return False
         
-        # Check for direct term matches
+        # Check for direct term matches and fuzzy matches
         direct_matches = 0
+        fuzzy_matches = 0
+        
         for term in meaningful_query_terms:
+            # Exact match
             if term in content_lower:
                 direct_matches += 1
+            else:
+                # Fuzzy matching for common typos and variations
+                fuzzy_match_found = self._check_fuzzy_match(term, content_lower)
+                if fuzzy_match_found:
+                    fuzzy_matches += 1
         
-        # If most terms are present, it's likely relevant
-        if direct_matches >= len(meaningful_query_terms) * 0.5:  # At least 50% of terms match
+        total_matches = direct_matches + fuzzy_matches
+        
+        # If most terms are present (including fuzzy matches), it's likely relevant
+        if total_matches >= len(meaningful_query_terms) * 0.5:  # At least 50% of terms match
             return True
         
         # Check for semantic relevance using keyword categories
@@ -1066,6 +1081,54 @@ Answer the question using the information provided above. Be specific and detail
                     return True
         
         return False
+    
+    def _check_fuzzy_match(self, query_term: str, content: str) -> bool:
+        """Check for fuzzy matches to handle typos and variations."""
+        import re
+        
+        # Common typo patterns and variations
+        typo_patterns = {
+            'coronavirus': ['coronovirus', 'coronvirus', 'corovirus', 'coronavius'],
+            'photosynthesis': ['photosynthisis', 'photosynethesis', 'fotosynthesis'],
+            'biology': ['biolog', 'bioogy', 'biolgy'],
+            'mathematics': ['mathematic', 'maths', 'math'],
+            'physics': ['physic', 'fisics', 'phisics']
+        }
+        
+        # Check if query term has known variations
+        for correct_term, variations in typo_patterns.items():
+            if query_term in variations and correct_term in content:
+                return True
+            elif query_term == correct_term and any(var in content for var in variations):
+                return True
+        
+        # Simple edit distance check for close matches (max 2 character differences)
+        words_in_content = re.findall(r'\b\w{4,}\b', content)  # Only check words 4+ chars
+        for word in words_in_content:
+            if len(word) >= 4 and len(query_term) >= 4:
+                if self._simple_edit_distance(query_term, word) <= 2:
+                    return True
+        
+        return False
+    
+    def _simple_edit_distance(self, s1: str, s2: str) -> int:
+        """Calculate simple edit distance between two strings."""
+        if len(s1) > len(s2):
+            s1, s2 = s2, s1
+        
+        if len(s2) - len(s1) > 2:  # Too different in length
+            return 999
+            
+        distances = range(len(s1) + 1)
+        for i2, c2 in enumerate(s2):
+            distances_ = [i2 + 1]
+            for i1, c1 in enumerate(s1):
+                if c1 == c2:
+                    distances_.append(distances[i1])
+                else:
+                    distances_.append(1 + min((distances[i1], distances[i1 + 1], distances_[-1])))
+            distances = distances_
+        return distances[-1]
     
     def _categorize_query(self, query: str) -> set:
         """Categorize query into topic areas - GENERIC approach using dynamic keyword extraction."""
@@ -1195,8 +1258,8 @@ Answer the question using the information provided above. Be specific and detail
         if len(section_numbers) > 5:  # Too many section numbers indicates TOC (increased threshold)
             return True
         
-        # Check if summary contains filename artifacts
-        if re.search(r'\w+_\w+_courseware\.pdf', summary, re.IGNORECASE):
+        # Check if summary contains filename artifacts (generic pattern)
+        if re.search(r'\w+_\w+_[\w]+\.pdf', summary, re.IGNORECASE):  # Any courseware/document pattern
             return True
         
         # Check if summary starts with filename pattern or broken text

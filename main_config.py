@@ -11,17 +11,17 @@ TOP_K = 5
 CHUNK_SIZE = 1024
 CHUNK_OVERLAP = 128
 
-# Educational content paths
-CONTENT_DIRECTORY = "data/educational_content/pdfs"  # ✅ Process all PDFs
-METADATA_FILE = "data/educational_content/metadata.json"
+# Content paths - can be easily changed for different projects
+CONTENT_DIRECTORY = "data/educational_content/pdfs"  # Change this for your content
+METADATA_FILE = "data/educational_content/metadata.json"  # Change this for your metadata
 
 # =============================================================================
-# MODEL CONFIGURATION (Unified for all components)
+# MODEL CONFIGURATION (Simple and clear)
 # =============================================================================
-# Choose one provider: "local" (free, offline) or "azure" (Azure OpenAI with OpenAI-compatible API)
+# Choose one provider: "local" (free, offline) or "azure" (Azure OpenAI)
 MODEL_PROVIDER = "azure"
 
-# Model definitions for each provider
+# Model definitions for each provider - easily customizable
 MODELS = {
     "local": {
         "embedding": "all-MiniLM-L6-v2",
@@ -42,25 +42,25 @@ MODELS = {
 }
 
 # =============================================================================
-# AGENT CONFIGURATION - Proper Agent-Based Architecture
+# AGENT CONFIGURATION - Simple Agent-Based Architecture
 # =============================================================================
 AGENTS = {
     "pdf_content": {
         "name": "PDF Content Agent",
         "class": "PDFContentAgent",
-        "collection": "pdf_educational_content",  # Dedicated PDF collection
+        "collection": "pdf_educational_content",  # Simple, clear collection name
         "description": "Specialized agent for educational PDF content with enhanced metadata extraction"
     },
     "video_transcript": {
         "name": "Video Transcript Agent", 
         "class": "VideoTranscriptAgent",
-        "collection": "video_transcripts",  # Dedicated video collection
+        "collection": "video_transcripts",  # Simple, clear collection name
         "description": "Specialized agent for video transcript analysis with speaker detection"
     },
     "general_query": {
         "name": "General Query Agent",
         "class": "GeneralQueryAgent", 
-        "collection": "general_content",  # General content collection
+        "collection": "general_content",  # Simple, clear collection name
         "description": "General purpose agent for non-specialized queries"
     }
 }
