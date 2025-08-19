@@ -1083,51 +1083,134 @@ Answer the question using the information provided above. Be specific and detail
         return False
     
     def _check_fuzzy_match(self, query_term: str, content: str) -> bool:
-        """Check for fuzzy matches to handle typos and variations."""
+        """Generic fuzzy matching based purely on algorithmic similarity - no hardcoded patterns."""
         import re
         
-        # Common typo patterns and variations
-        typo_patterns = {
-            'coronavirus': ['coronovirus', 'coronvirus', 'corovirus', 'coronavius'],
-            'photosynthesis': ['photosynthisis', 'photosynethesis', 'fotosynthesis'],
-            'biology': ['biolog', 'bioogy', 'biolgy'],
-            'mathematics': ['mathematic', 'maths', 'math'],
-            'physics': ['physic', 'fisics', 'phisics']
-        }
+        if len(query_term) < 4:  # Skip very short terms
+            return False
         
-        # Check if query term has known variations
-        for correct_term, variations in typo_patterns.items():
-            if query_term in variations and correct_term in content:
-                return True
-            elif query_term == correct_term and any(var in content for var in variations):
-                return True
+        # Extract all meaningful words from content (4+ characters)
+        words_in_content = re.findall(r'\b\w{4,}\b', content.lower())
         
-        # Simple edit distance check for close matches (max 2 character differences)
-        words_in_content = re.findall(r'\b\w{4,}\b', content)  # Only check words 4+ chars
         for word in words_in_content:
-            if len(word) >= 4 and len(query_term) >= 4:
-                if self._simple_edit_distance(query_term, word) <= 2:
-                    return True
+            # Check similarity using multiple generic approaches
+            if self._is_similar_word(query_term.lower(), word):
+                return True
         
         return False
     
+    def _is_similar_word(self, term1: str, term2: str) -> bool:
+        """Generic word similarity detection using multiple algorithms."""
+        # Skip if length difference is too large
+        if abs(len(term1) - len(term2)) > 3:
+            return False
+        
+        # 1. Edit distance approach - allows for typos
+        if self._simple_edit_distance(term1, term2) <= 2:
+            return True
+        
+        # 2. Character overlap approach - handles letter swaps/omissions
+        if self._character_overlap_similarity(term1, term2) >= 0.8:
+            return True
+        
+        # 3. Longest common subsequence - handles missing/extra letters
+        if self._lcs_similarity(term1, term2) >= 0.75:
+            return True
+        
+        # 4. Phonetic similarity - handles sound-alike words
+        if len(term1) >= 5 and len(term2) >= 5:
+            if self._phonetic_similarity(term1, term2) >= 0.8:
+                return True
+        
+        return False
+    
+    def _character_overlap_similarity(self, s1: str, s2: str) -> float:
+        """Calculate similarity based on character overlap."""
+        from collections import Counter
+        
+        chars1 = Counter(s1.lower())
+        chars2 = Counter(s2.lower())
+        
+        # Calculate intersection and union
+        intersection = sum((chars1 & chars2).values())
+        union = sum((chars1 | chars2).values())
+        
+        return intersection / union if union > 0 else 0.0
+    
+    def _lcs_similarity(self, s1: str, s2: str) -> float:
+        """Calculate similarity using Longest Common Subsequence."""
+        def lcs_length(x, y):
+            m, n = len(x), len(y)
+            dp = [[0] * (n + 1) for _ in range(m + 1)]
+            
+            for i in range(1, m + 1):
+                for j in range(1, n + 1):
+                    if x[i-1] == y[j-1]:
+                        dp[i][j] = dp[i-1][j-1] + 1
+                    else:
+                        dp[i][j] = max(dp[i-1][j], dp[i][j-1])
+            return dp[m][n]
+        
+        lcs_len = lcs_length(s1.lower(), s2.lower())
+        max_len = max(len(s1), len(s2))
+        return lcs_len / max_len if max_len > 0 else 0.0
+    
+    def _phonetic_similarity(self, s1: str, s2: str) -> float:
+        """Basic phonetic similarity - maps similar sounds."""
+        # Simple character substitution rules for common sound-alike patterns
+        def normalize_phonetic(word):
+            word = word.lower()
+            # Common phonetic substitutions
+            substitutions = [
+                ('ph', 'f'), ('gh', 'f'), ('c', 'k'), ('ck', 'k'),
+                ('qu', 'kw'), ('x', 'ks'), ('z', 's'), ('th', 't'),
+                ('sh', 's'), ('ch', 's'), ('tion', 'shun'), ('sion', 'shun')
+            ]
+            for old, new in substitutions:
+                word = word.replace(old, new)
+            return word
+        
+        norm1 = normalize_phonetic(s1)
+        norm2 = normalize_phonetic(s2)
+        
+        # Use edit distance on normalized forms
+        distance = self._simple_edit_distance(norm1, norm2)
+        max_len = max(len(norm1), len(norm2))
+        return 1.0 - (distance / max_len) if max_len > 0 else 0.0
+    
     def _simple_edit_distance(self, s1: str, s2: str) -> int:
-        """Calculate simple edit distance between two strings."""
+        """Calculate Levenshtein distance between two strings - optimized for fuzzy matching."""
+        if not s1 or not s2:
+            return max(len(s1), len(s2))
+        
+        if s1 == s2:
+            return 0
+        
+        # Optimize for very different lengths
+        if abs(len(s1) - len(s2)) > 3:
+            return 999
+        
+        # Ensure s1 is shorter for memory optimization
         if len(s1) > len(s2):
             s1, s2 = s2, s1
         
-        if len(s2) - len(s1) > 2:  # Too different in length
-            return 999
-            
-        distances = range(len(s1) + 1)
+        # Use single array for space optimization
+        distances = list(range(len(s1) + 1))
+        
         for i2, c2 in enumerate(s2):
-            distances_ = [i2 + 1]
+            new_distances = [i2 + 1]
             for i1, c1 in enumerate(s1):
                 if c1 == c2:
-                    distances_.append(distances[i1])
+                    new_distances.append(distances[i1])
                 else:
-                    distances_.append(1 + min((distances[i1], distances[i1 + 1], distances_[-1])))
-            distances = distances_
+                    # Cost: insertion, deletion, substitution
+                    new_distances.append(1 + min(
+                        distances[i1],      # substitution
+                        distances[i1 + 1],  # insertion
+                        new_distances[-1]   # deletion
+                    ))
+            distances = new_distances
+        
         return distances[-1]
     
     def _categorize_query(self, query: str) -> set:
@@ -1147,20 +1230,38 @@ Answer the question using the information provided above. Be specific and detail
         for term in meaningful_terms:
             categories.add(term)
         
-        # Add some broad academic categories based on common educational terms
-        academic_indicators = {
-            'science': ['science', 'scientific', 'research', 'study', 'analysis', 'experiment'],
-            'mathematics': ['math', 'mathematical', 'equation', 'formula', 'calculation', 'number'],
-            'language': ['language', 'literature', 'writing', 'reading', 'grammar', 'text'],
-            'history': ['history', 'historical', 'past', 'ancient', 'period', 'era'],
-            'social': ['social', 'society', 'culture', 'community', 'people', 'human']
-        }
+        # GENERIC APPROACH: Use word frequency and linguistic patterns instead of hardcoded categories
+        # Extract word stems and patterns to identify subject areas dynamically
+        word_stems = self._extract_word_stems(meaningful_terms)
         
-        for category, indicators in academic_indicators.items():
-            if any(indicator in query.lower() for indicator in indicators):
-                categories.add(category)
+        # Add significant word stems as categories
+        for stem in word_stems:
+            if len(stem) > 3:  # Only meaningful stems
+                categories.add(stem)
         
         return categories if categories else {'general'}
+    
+    def _extract_word_stems(self, words: list) -> list:
+        """Extract meaningful word stems using linguistic patterns."""
+        stems = []
+        
+        for word in words:
+            if len(word) < 4:
+                stems.append(word)
+                continue
+            
+            # Simple stemming by removing common suffixes
+            stem = word
+            suffixes = ['ing', 'ed', 'er', 'est', 'ly', 'ion', 'tion', 'sion', 'ment', 'ness', 'ity', 'al', 'ic', 'ical']
+            
+            for suffix in sorted(suffixes, key=len, reverse=True):  # Try longer suffixes first
+                if stem.endswith(suffix) and len(stem) > len(suffix) + 2:
+                    stem = stem[:-len(suffix)]
+                    break
+            
+            stems.append(stem)
+        
+        return stems
     
     def _categorize_content(self, content: str) -> set:
         """Categorize content into topic areas - GENERIC approach using dynamic analysis."""
@@ -1198,19 +1299,57 @@ Answer the question using the information provided above. Be specific and detail
         for word in top_words[:5]:  # Top 5 most frequent words
             categories.add(word)
         
-        # Look for broad academic domain indicators (more generic patterns)
-        domain_patterns = {
-            'technical': r'\b(system|process|method|technique|procedure|algorithm|technology)\b',
-            'scientific': r'\b(research|study|analysis|experiment|data|result|conclusion|hypothesis)\b',
-            'educational': r'\b(learn|teach|understand|knowledge|skill|concept|principle|theory)\b',
-            'practical': r'\b(use|apply|implement|practice|example|case|solution|problem)\b'
-        }
+        # GENERIC APPROACH: Dynamic domain detection based on word patterns and frequencies
+        # Instead of hardcoded domains, detect patterns dynamically
         
-        for domain, pattern in domain_patterns.items():
-            if re.search(pattern, content_lower):
-                categories.add(domain)
+        # Group words by semantic similarity (without predefined categories)
+        word_clusters = self._cluster_words_by_patterns(meaningful_words)
+        
+        # Add the most significant word clusters as categories
+        for cluster_name, cluster_words in word_clusters.items():
+            if len(cluster_words) >= 2:  # Only if cluster has multiple related words
+                categories.add(cluster_name)
         
         return categories if categories else {'general'}
+    
+    def _cluster_words_by_patterns(self, words: list) -> dict:
+        """Dynamically cluster words by common patterns - no hardcoded domains."""
+        from collections import defaultdict
+        
+        clusters = defaultdict(list)
+        
+        # Dynamic pattern detection based on word endings and common linguistic patterns
+        for word in words:
+            if len(word) < 4:
+                continue
+            
+            # Cluster by common word endings (linguistic approach)
+            if word.endswith(('tion', 'sion')):
+                clusters['process_concepts'].append(word)
+            elif word.endswith(('ment', 'ence', 'ance')):
+                clusters['state_concepts'].append(word)
+            elif word.endswith(('ing', 'ling')):
+                clusters['action_concepts'].append(word)
+            elif word.endswith(('ism', 'ology', 'ics')):
+                clusters['field_concepts'].append(word)
+            elif word.endswith(('able', 'ible')):
+                clusters['quality_concepts'].append(word)
+            else:
+                # Cluster by word length and patterns for root concepts
+                if len(word) >= 6:
+                    clusters['complex_concepts'].append(word)
+                else:
+                    clusters['basic_concepts'].append(word)
+        
+        # Convert to meaningful cluster names using the most frequent word in each cluster
+        final_clusters = {}
+        for cluster_type, word_list in clusters.items():
+            if len(word_list) >= 2:  # Only keep clusters with multiple words
+                # Use the most frequent or longest word as the cluster representative
+                representative_word = max(word_list, key=lambda w: (word_list.count(w), len(w)))
+                final_clusters[representative_word] = word_list
+        
+        return final_clusters
     
     def _is_poor_quality_summary(self, summary: str) -> bool:
         """Check if a summary contains metadata artifacts or is of poor quality."""
