@@ -34,9 +34,13 @@ app.add_middleware(
 
 # Response models
 class ContentRecommendation(BaseModel):
-    filename: str
-    title: str
-    course: str
+    content_title: str  # Name of the PDF content
+    course_id: Optional[str] = None
+    course_title: str  # From metadata.json
+    subject: Optional[str] = None
+    grade: Optional[str] = None
+    board: Optional[str] = None
+    author: Optional[str] = None
     page_number: int
     keywords: List[str]
     summary: str
@@ -199,9 +203,13 @@ async def query_content(request: QueryRequest):
         for rec in result_data.get("recommendations", []):
             if isinstance(rec, dict):
                 recommendation = ContentRecommendation(
-                    filename=rec.get("filename", "unknown"),
-                    title=rec.get("title", "Untitled"),
-                    course=rec.get("course", "General"),
+                    content_title=rec.get("content_title", rec.get("title", "Untitled")),
+                    course_id=rec.get("course_id"),
+                    course_title=rec.get("course_title", rec.get("course", "General")),
+                    subject=rec.get("subject"),
+                    grade=rec.get("grade"),
+                    board=rec.get("board"),
+                    author=rec.get("author"),
                     page_number=rec.get("page_number", 1),
                     keywords=rec.get("keywords", [])[:5],  # Limit keywords
                     summary=rec.get("summary", "No summary available"),

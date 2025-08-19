@@ -1,16 +1,8 @@
 {
-  "ncert_biology_class10.pdf": {
-    "title": "NCERT Biology Class 10",
-    "author": "NCERT",
-    "course": "Biology",
-    "subject": "Life Processes",
-    "medium": "English",
-    "board": "CBSE",
-    "grade": "Class 10",
-    "topics": ["life processes", "control and coordination", "reproduction", "heredity", "natural resources"],
-    "description": "NCERT Class 10 Biology textbook covering fundamental life processes and biological concepts"
-  },
-  "Physical Education: Relationship with othER Subjects.pdf": {
+  "Physical": {
+    "course_id": "do_62657369627673",
+    "course_title": "Physical Education Curriculum",
+    "content_title": "Interdisciplinary Connections in Physical Education",
     "title": "Physical Education: Relationship with other Subjects",
     "author": "NCERT",
     "course": "Physical Education",
@@ -21,7 +13,38 @@
     "topics": ["physical education", "geography", "history", "mathematics", "interdisciplinary studies", "health education"],
     "description": "Educational material on how Physical Education relates to and integrates with other academic subjects"
   },
+  "Physical Education: Relationship with othER Subjects.pdf": {
+    "course_id": "do_62657369627673",
+    "course_title": "Physical Education Curriculum",
+    "content_title": "Interdisciplinary Connections in Physical Education",
+    "title": "Physical Education: Relationship with other Subjects",
+    "author": "NCERT",
+    "course": "Physical Education",
+    "subject": "Physical Education and Interdisciplinary Studies",
+    "medium": "English",
+    "board": "NCERT",
+    "grade": "General",
+    "topics": ["physical education", "geography", "history", "mathematics", "interdisciplinary studies", "health education"],
+    "description": "Educational material on how Physical Education relates to and integrates with other academic subjects"
+  },
+  "ncert_biology_class10.pdf": {
+    "course_id": "do_11329906829099827212",
+    "course_title": "NCERT Biology Class 10",
+    "content_title": "Life Processes and Biological Systems",
+    "title": "NCERT Biology Class 10",
+    "author": "NCERT",
+    "course": "Biology",
+    "subject": "Life Processes",
+    "medium": "English",
+    "board": "CBSE",
+    "grade": "Class 10",
+    "topics": ["life processes", "control and coordination", "reproduction", "heredity", "natural resources"],
+    "description": "NCERT Class 10 Biology textbook covering fundamental life processes and biological concepts"
+  },
   "plant_photosynthesis_courseware.pdf": {
+    "course_id": "do_33445566778899",
+    "course_title": "Advanced Botany Studies",
+    "content_title": "Photosynthesis Mechanisms and Processes",
     "title": "Plant Photosynthesis Courseware",
     "author": "CUTM",
     "course": "Botany",

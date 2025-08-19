@@ -1,22 +1,89 @@
 from pypdf import PdfReader
 import os
+import json
 
 class PDFParser:
     def __init__(self, chunk_size: int, chunk_overlap: int):
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
+        self.course_metadata = self._load_course_metadata()
+
+    def _load_course_metadata(self) -> dict:
+        """Load course metadata from metadata.json"""
+        try:
+            # Get the path relative to the project root
+            current_dir = os.path.dirname(os.path.dirname(__file__))
+            metadata_path = os.path.join(current_dir, 'data', 'educational_content', 'metadata.json')
+            
+            if os.path.exists(metadata_path):
+                with open(metadata_path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            else:
+                print(f"⚠️ Course metadata file not found at {metadata_path}")
+                return {}
+        except Exception as e:
+            print(f"⚠️ Failed to load course metadata: {e}")
+            return {}
+
+    def _get_course_metadata_for_file(self, filename: str) -> dict:
+        """Get course metadata for a specific file"""
+        # Try exact match first
+        if filename in self.course_metadata:
+            return self.course_metadata[filename]
+        
+        # Try case-insensitive match
+        for key, value in self.course_metadata.items():
+            if key.lower() == filename.lower():
+                return value
+            
+        # Try partial match (without extension)
+        base_filename = filename.replace('.pdf', '')
+        for key, value in self.course_metadata.items():
+            if key.replace('.pdf', '').lower() == base_filename.lower():
+                return value
+        
+        # Try contains match (for truncated filenames)
+        for key, value in self.course_metadata.items():
+            if filename.lower() in key.lower() or key.lower() in filename.lower():
+                return value
+                
+        return {}
 
     def parse_pdf(self, pdf_path: str) -> tuple[list[str], list[dict]]:
-        """Parse PDF and return list of text chunks with proper page metadata."""
+        """Parse PDF and return list of text chunks with proper page metadata and course information."""
         filename = os.path.basename(pdf_path)
         chunks = []
         metadata = []
+        
+        # Get course metadata for this file
+        course_meta = self._get_course_metadata_for_file(filename)
+        
+        # Create enriched content prefix for better searchability
+        enriched_prefix = ""
+        if course_meta:
+            course_info = []
+            if course_meta.get('course_title'):
+                course_info.append(f"Course: {course_meta['course_title']}")
+            if course_meta.get('subject'):
+                course_info.append(f"Subject: {course_meta['subject']}")
+            if course_meta.get('author'):
+                course_info.append(f"Author: {course_meta['author']}")
+            if course_meta.get('grade'):
+                course_info.append(f"Grade: {course_meta['grade']}")
+            if course_meta.get('topics'):
+                topics = ', '.join(course_meta['topics'][:3])  # Include top 3 topics
+                course_info.append(f"Topics: {topics}")
+            
+            if course_info:
+                enriched_prefix = " | ".join(course_info) + " | Content: "
         
         try:
             reader = PdfReader(pdf_path)
             total_pages = len(reader.pages)
             
             print(f"   📖 PDF has {total_pages} pages")
+            if course_meta:
+                print(f"   📚 Course: {course_meta.get('course_title', 'Unknown')}")
             
             for page_num, page in enumerate(reader.pages, 1):
                 try:
@@ -32,15 +99,34 @@ class PDFParser:
                             page_chunks = self._chunk_page_text(cleaned_text)
                             
                             for chunk_idx, chunk in enumerate(page_chunks):
-                                chunks.append(chunk)
-                                metadata.append({
+                                # Enrich chunk with course metadata for better searchability
+                                enriched_chunk = enriched_prefix + chunk
+                                chunks.append(enriched_chunk)
+                                
+                                # Include course metadata in chunk metadata
+                                chunk_metadata = {
                                     "filename": filename,
                                     "page": page_num,
                                     "chunk_index": chunk_idx,
                                     "total_pages": total_pages,
                                     "source_path": pdf_path,
                                     "content_preview": chunk[:100] + "..." if len(chunk) > 100 else chunk
-                                })
+                                }
+                                
+                                # Add course metadata if available
+                                if course_meta:
+                                    chunk_metadata.update({
+                                        "course_id": course_meta.get('course_id'),
+                                        "course_title": course_meta.get('course_title'),
+                                        "content_title": course_meta.get('content_title'),
+                                        "author": course_meta.get('author'),
+                                        "subject": course_meta.get('subject'),
+                                        "grade": course_meta.get('grade'),
+                                        "board": course_meta.get('board'),
+                                        "topics": course_meta.get('topics', [])
+                                    })
+                                
+                                metadata.append(chunk_metadata)
                         
                         # Progress indicator
                         if page_num % 50 == 0:

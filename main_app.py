@@ -260,11 +260,18 @@ def main():
         print(f"   • Agents: {', '.join(config.AGENTS.keys())}")
         print(f"   • Content Directory: {config.CONTENT_DIRECTORY}")
         return
-    
-    # Setup models
+
+    # Setup models based on what's needed
     print("🔧 Setting up models...")
-    llm = setup_llm()
+    
+    # Always need embedding model
     embedding_model = setup_embedding()
+    
+    # Only setup LLM for query operations
+    if args.query:
+        llm = setup_llm()
+    else:
+        llm = None
     
     if args.load:
         load_educational_content(embedding_model)

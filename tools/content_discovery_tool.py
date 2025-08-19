@@ -24,6 +24,47 @@ class ContentDiscoveryTool(BaseTool):
         self.description = description
         self.top_k = top_k
         self.return_json = return_json
+        self.metadata = self._load_metadata()
+
+    def _load_metadata(self) -> Dict:
+        """Load content metadata from metadata.json"""
+        try:
+            import os
+            metadata_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 
+                                       'data', 'educational_content', 'metadata.json')
+            if os.path.exists(metadata_path):
+                with open(metadata_path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            else:
+                print(f"⚠️ Metadata file not found at {metadata_path}, using fallback generation")
+                return {}
+        except Exception as e:
+            print(f"⚠️ Failed to load metadata: {e}, using fallback generation")
+            return {}
+
+    def _get_metadata_for_file(self, filename: str) -> Dict:
+        """Get metadata for a specific file"""
+        # Try exact match first
+        if filename in self.metadata:
+            return self.metadata[filename]
+        
+        # Try case-insensitive match
+        for key, value in self.metadata.items():
+            if key.lower() == filename.lower():
+                return value
+            
+        # Try partial match (without extension)
+        base_filename = filename.replace('.pdf', '')
+        for key, value in self.metadata.items():
+            if key.replace('.pdf', '').lower() == base_filename.lower():
+                return value
+        
+        # Try contains match (for truncated filenames)
+        for key, value in self.metadata.items():
+            if filename.lower() in key.lower() or key.lower() in filename.lower():
+                return value
+                
+        return {}
 
     def _initialize_bm25(self):
         # Try to get all documents from any vector DB type
@@ -744,11 +785,33 @@ Answer the question using the information provided above. Be specific and detail
                 # Use key concepts as keywords, fallback to content extraction
                 keywords = key_concepts if key_concepts else self._extract_keywords_from_content(clean_content)
                 
-                # Generate course from key concepts or filename
-                if key_concepts:
-                    course = f"{key_concepts[0].title()} Studies" if key_concepts else "General Studies"
+                # Get metadata for this file
+                file_metadata = self._get_metadata_for_file(filename)
+                
+                # Use metadata if available, otherwise generate from key concepts or filename
+                if file_metadata:
+                    course_id = file_metadata.get('course_id', 'unknown_course_id')
+                    course_title = file_metadata.get('course_title', filename.replace('.pdf', '').replace('_', ' ').title())
+                    content_title = file_metadata.get('content_title', title)
+                    course = file_metadata.get('course', 'General Studies')
+                    author = file_metadata.get('author', 'Document Author')
+                    subject = file_metadata.get('subject', 'General')
+                    grade = file_metadata.get('grade', 'General')
+                    board = file_metadata.get('board', 'General')
                 else:
-                    course = f"{filename.replace('.pdf', '').replace('_', ' ').title()} Studies"
+                    # Fallback to dynamic generation
+                    course_id = f"generated_{filename.replace('.pdf', '').replace(' ', '_').lower()}"
+                    if key_concepts:
+                        course_title = f"{key_concepts[0].title()} Studies"
+                        course = f"{key_concepts[0].title()} Studies"
+                    else:
+                        course_title = f"{filename.replace('.pdf', '').replace('_', ' ').title()} Studies"
+                        course = f"{filename.replace('.pdf', '').replace('_', ' ').title()} Studies"
+                    content_title = title
+                    author = "Document Author"
+                    subject = "General"
+                    grade = "General" 
+                    board = "General"
                 
                 file_key = f"{filename}_page_{page}"
                 if file_key not in seen_files:
@@ -757,8 +820,14 @@ Answer the question using the information provided above. Be specific and detail
                     recommendation = {
                         "filename": filename,  # ACTUAL filename from database
                         "title": title,
-                        "author": "Document Author",
+                        "content_title": content_title,
+                        "author": author,
+                        "course_id": course_id,
+                        "course_title": course_title,
                         "course": course,
+                        "subject": subject,
+                        "grade": grade,
+                        "board": board,
                         "page_number": page,
                         "section": f"Page {page}",
                         "keywords": keywords[:5],  # Limit to top 5
@@ -798,14 +867,41 @@ Answer the question using the information provided above. Be specific and detail
                     # Generate title from filename
                     title = filename.replace('.pdf', '').replace('_', ' ').title()
                     
-                    # Generate course from keywords
-                    course = f"{matched_keywords[0].title()} Studies" if matched_keywords else "General Studies"
+                    # Get metadata for this file
+                    file_metadata = self._get_metadata_for_file(filename)
+                    
+                    # Use metadata if available, otherwise generate from keywords
+                    if file_metadata:
+                        course_id = file_metadata.get('course_id', 'unknown_course_id')
+                        course_title = file_metadata.get('course_title', title)
+                        content_title = file_metadata.get('content_title', title)
+                        course = file_metadata.get('course', 'General Studies')
+                        author = file_metadata.get('author', 'Document Author')
+                        subject = file_metadata.get('subject', 'General')
+                        grade = file_metadata.get('grade', 'General')
+                        board = file_metadata.get('board', 'General')
+                    else:
+                        # Fallback to dynamic generation
+                        course_id = f"generated_{filename.replace('.pdf', '').replace(' ', '_').lower()}"
+                        course_title = f"{matched_keywords[0].title()} Studies" if matched_keywords else "General Studies"
+                        content_title = title
+                        course = f"{matched_keywords[0].title()} Studies" if matched_keywords else "General Studies"
+                        author = "Document Author"
+                        subject = "General"
+                        grade = "General"
+                        board = "General"
                     
                     recommendation = {
                         "filename": filename,  # ACTUAL filename from database
                         "title": title,
-                        "author": "Document Author",  # Could be enhanced with metadata extraction
+                        "content_title": content_title,
+                        "author": author,
+                        "course_id": course_id,
+                        "course_title": course_title,
                         "course": course,
+                        "subject": subject,
+                        "grade": grade,
+                        "board": board,
                         "page_number": page,
                         "section": f"Page {page}",
                         "keywords": matched_keywords,
