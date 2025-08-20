@@ -43,5 +43,36 @@
     "topics": ["photosynthesis", "light reactions", "carbon fixation", "chlorophyll", "plant metabolism"],
     "description": "Comprehensive courseware on plant photosynthesis processes and mechanisms",
     "artifact_url": "https://edsandboxda72f12a.blob.core.windows.net/ed-sandbox-public-6b9d14cf88/content/assets/do_21438192930807808013/plant_photosynthesis_courseware.pdf"
+  },
+
+  "Photosynthesis_class7.pdf": {
+    "course_id": "do_21438246154966630416",
+    "course_title": "Nutrition in Plants",
+    "content_title": "Nutrition in Plants",
+    "title": "Nutrition in Plants",
+    "author": "NCERT",
+    "course": "Botany",
+    "subject": "Science", 
+    "medium": "English",
+    "board": "CBSE",
+    "grade": "Class 7",
+    "topics": ["photosynthesis", "Nutrition in plants"],
+    "description": "All living organisms require food. Plants can synthesise food for themselves",
+    "artifact_url": "https://edsandboxda72f12a.blob.core.windows.net/ed-sandbox-public-6b9d14cf88/content/assets/do_21438246154966630416/photosynthesis_class7.pdf"
+  },
+  "Photosynthesis_class10.pdf": {
+    "course_id": "do_21438246193152000017",
+    "course_title": "Photosynthesis",
+    "content_title": "Photosynthesis",
+    "title": "Photosynthesis",
+    "author": "NCERT",
+    "course": "Botany",
+    "subject": "Science", 
+    "medium": "English",
+    "board": "CBSE",
+    "grade": "Class 10",
+    "topics": ["photosynthesis", "PHOTOCHEMICAL AND BIOSYNTHETIC PHASE", "PHOTOSYNTHETIC PIGMENTS", "Electron transport chain in photosynthesis"],
+    "description": "All living organisms require food. Plants can synthesise food for themselves",
+    "artifact_url": "https://edsandboxda72f12a.blob.core.windows.net/ed-sandbox-public-6b9d14cf88/content/assets/do_21438246193152000017/photosynthesis_class10.pdf"
   }
 }
