@@ -164,14 +164,14 @@ def load_educational_content(embedding_model: EmbeddingModel, limit_chunks: int 
     all_chunks = []
     for pdf_path, pdf_file in all_pdf_files:
         print(f"📄 Processing: {pdf_file}")
-        chunks, metadata = pdf_parser.parse_pdf(pdf_path)
+        chunks, pdf_metadata = pdf_parser.parse_pdf(pdf_path)
         
         # Convert to the expected format
         for i, chunk in enumerate(chunks):
             chunk_data = {
                 "content": chunk,
                 "filename": pdf_file,
-                "page": metadata[i]["page"] if i < len(metadata) else 1,
+                "page": pdf_metadata[i]["page"] if i < len(pdf_metadata) else 1,
                 "chunk_id": i
             }
             all_chunks.append(chunk_data)
@@ -200,7 +200,12 @@ def load_educational_content(embedding_model: EmbeddingModel, limit_chunks: int 
             "page": chunk.get("page", 1),
             "chunk_id": chunk.get("chunk_id", 0),
             "content_type": "educational_pdf",
-            "source": "pdf_content_agent"
+            "source": "pdf_content_agent",
+            "author": pdf_metadata[i].get("author"),
+            "subject": pdf_metadata[i].get("subject"),
+            "grade": pdf_metadata[i].get("grade"),
+            "board": pdf_metadata[i].get("board"),
+            "topics": pdf_metadata[i].get("topics", [])
         }
         metadata.append(meta)
     

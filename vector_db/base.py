@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import List, Dict, Optional
 
 class BaseVectorDB(ABC):
     @abstractmethod
@@ -10,5 +11,5 @@ class BaseVectorDB(ABC):
         pass
 
     @abstractmethod
-    def search(self, query_embedding, top_k: int):
+    def search(self, query_embedding: List[float], top_k: int, query_metadata: Optional[Dict] = None):
         pass

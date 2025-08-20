@@ -27,6 +27,21 @@ class EnhancedContentDiscoveryVectorDB(ContentDiscoveryVectorDB):
         """
         super().__init__(db_path, collection_name, top_k)
         self.enhancer = HybridEducationalEnhancer(use_langextract=use_langextract)
+    
+    def setup(self, dimension: int):
+        """Setup enhanced collection with metadata fields"""
+        if self.client.has_collection(self.collection_name):
+            self.client.drop_collection(self.collection_name)
+        
+        # For now, use the same basic setup as parent class to avoid schema conflicts
+        # The enhanced metadata will be stored in the text field as enhanced text format
+        self.client.create_collection(
+            collection_name=self.collection_name,
+            dimension=dimension,
+            primary_field_name="id",
+            vector_field_name="vector",
+            auto_id=True
+        )
         
     def insert_enhanced(self, data: List[str], embeddings: List[List[float]], 
                        metadata: List[Dict] = None, enhance_content: bool = True):
@@ -72,8 +87,16 @@ class EnhancedContentDiscoveryVectorDB(ContentDiscoveryVectorDB):
             enhanced_data.append(enhanced_text)
             enhanced_metadata.append(enhanced_meta)
         
-        # Insert enhanced data using parent method
-        super().insert(enhanced_data, embeddings, enhanced_metadata)
+        # Insert enhanced data using basic schema (vector and text only)
+        # All metadata is embedded in the enhanced text format
+        insert_data = []
+        for i, (text, emb) in enumerate(zip(enhanced_data, embeddings)):
+            insert_data.append({
+                "vector": emb,
+                "text": text
+            })
+        
+        self.client.insert(collection_name=self.collection_name, data=insert_data)
         
         print(f"✅ Inserted {len(enhanced_data)} enhanced content items")
     
@@ -153,7 +176,8 @@ class EnhancedContentDiscoveryVectorDB(ContentDiscoveryVectorDB):
         return merged
     
     def search_enhanced(self, query_embedding: List[float], top_k: int = None,
-                       difficulty_filter: str = None, concept_filter: str = None) -> List[Dict]:
+                       difficulty_filter: str = None, concept_filter: str = None, 
+                       query_metadata: Dict = None) -> List[Dict]:
         """
         Enhanced search with educational filtering options
         
@@ -162,12 +186,18 @@ class EnhancedContentDiscoveryVectorDB(ContentDiscoveryVectorDB):
             top_k: Number of results to return
             difficulty_filter: Filter by difficulty level (basic, intermediate, advanced)
             concept_filter: Filter by key concepts
+            query_metadata: Query metadata for filtering (board, medium, subject, grade)
             
         Returns:
             List of enhanced search results
         """
-        # Get basic search results
-        results = self.search(query_embedding, top_k or self.top_k)
+        # Get basic search results with metadata filtering
+        results = self.search(query_embedding, top_k or self.top_k, query_metadata)
+        
+        # If no results from filtered search, try without filters
+        if not results and query_metadata:
+            print("⚠️ No results with metadata filters, trying without filters...")
+            results = self.search(query_embedding, top_k or self.top_k, None)
         
         enhanced_results = []
         for result in results:

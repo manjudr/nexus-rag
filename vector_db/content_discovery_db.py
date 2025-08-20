@@ -1,6 +1,6 @@
 from .base import BaseVectorDB
 from pymilvus import MilvusClient
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 class ContentDiscoveryVectorDB(BaseVectorDB):
     """
@@ -41,14 +41,44 @@ class ContentDiscoveryVectorDB(BaseVectorDB):
             
         self.client.insert(collection_name=self.collection_name, data=insert_data)
 
-    def search(self, query_embedding: List[float], top_k: int):
-        """Search and return structured content discovery results"""
-        results = self.client.search(
-            collection_name=self.collection_name,
-            data=[query_embedding],
-            limit=top_k,
-            output_fields=["text"]
-        )
+    def search(self, query_embedding: List[float], top_k: int, query_metadata: Optional[Dict] = None):
+        """Search and return structured content discovery results with metadata filtering"""
+        
+        # Build filters based on query metadata
+        filters = []
+        if query_metadata:
+            
+            if query_metadata.get('board'):
+                filters.append(f'board == "{query_metadata.get('board')}"')
+            if query_metadata.get('medium'):
+                filters.append(f'medium == "{query_metadata.get('medium')}"')
+            if query_metadata.get('subject'):
+                filters.append(f'subject == "{query_metadata.get('subject')}"')
+            if query_metadata.get('grade'):
+                filters.append(f'grade == "{query_metadata.get('grade')}"')
+        
+        # Create filter expression
+        expr = " and ".join(filters) if filters else ""
+
+        # Run search with conditional filtering
+        if filters:  # Only apply filters if they exist
+            results = self.client.search(
+                collection_name=self.collection_name,
+                data=[query_embedding],
+                limit=top_k,
+                output_fields=["text"],  # Only text field exists in basic schema
+                filter=expr  # Apply metadata filtering using 'filter' parameter
+            )
+        else:
+            # Run search without filtering
+            results = self.client.search(
+                collection_name=self.collection_name,
+                data=[query_embedding],
+                limit=top_k,
+                output_fields=["text"]  # Only text field exists in basic schema
+            )
+
+        print("===== results === ", results)
         
         if results and len(results[0]) > 0:
             structured_results = []
@@ -56,10 +86,15 @@ class ContentDiscoveryVectorDB(BaseVectorDB):
                 text = hit.entity.get("text")
                 filename, page, content = self._parse_enhanced_text(text)
                 
+                # Basic schema only has text field, extract metadata from text
                 structured_results.append({
                     "content": content,
                     "filename": filename,
                     "page": page,
+                    "board": "",  # Not available in basic schema
+                    "medium": "",  # Not available in basic schema
+                    "subject": "",  # Not available in basic schema
+                    "grade": "",  # Not available in basic schema
                     "score": hit.distance
                 })
             return structured_results
@@ -88,7 +123,7 @@ class ContentDiscoveryVectorDB(BaseVectorDB):
         results = self.client.query(
             collection_name=self.collection_name,
             filter="",
-            output_fields=["text"],
+            output_fields=["text"],  # Only text field exists in basic schema
             limit=16384
         )
         
@@ -96,9 +131,15 @@ class ContentDiscoveryVectorDB(BaseVectorDB):
         for result in results:
             text = result['text']
             filename, page, content = self._parse_enhanced_text(text)
+            
+            # Basic schema only has text field
             documents.append({
                 "content": content,
                 "filename": filename,
-                "page": page
+                "page": page,
+                "board": "",  # Not available in basic schema
+                "medium": "",  # Not available in basic schema
+                "subject": "",  # Not available in basic schema
+                "grade": ""  # Not available in basic schema
             })
         return documents

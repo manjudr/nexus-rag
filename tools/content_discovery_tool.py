@@ -961,15 +961,17 @@ Answer the question using the information provided above. Be specific and detail
     def run(self, query: str):
         """Run content discovery with actual database filenames"""
         try:
+            query_metadata = self._extract_metadata_with_llm(query)
+            
             bm25, documents_data = self._initialize_bm25()
 
             query_embedding = self.embedding_model.create_embedding(query)
             
             # Use enhanced search if available, otherwise fallback to basic search
             if self._is_enhanced_database() and hasattr(self.db, 'search_enhanced'):
-                vector_results = self.db.search_enhanced(query_embedding, top_k=self.top_k)
+                vector_results = self.db.search_enhanced(query_embedding, top_k=self.top_k, query_metadata=query_metadata)
             else:
-                vector_results = self.db.search(query_embedding, top_k=self.top_k)
+                vector_results = self.db.search(query_embedding, top_k=self.top_k, query_metadata=query_metadata)
 
             # Use vector results directly (they already have the right format)
             final_results = vector_results
@@ -1518,3 +1520,97 @@ Answer the question using the information provided above. Be specific and detail
                 return True
         
         return False
+    
+    def _extract_metadata_with_llm(self, query: str) -> Dict:
+        """
+        Use LLM to extract educational metadata from user queries.
+        """
+        try:
+            prompt = f"""
+            Analyze this educational query and extract metadata: "{query}"
+            
+            Return ONLY a valid JSON object with these exact fields:
+            - board: The educational board (CBSE, ICSE, State Board, IB, IGCSE, A-Level, O-Level, etc.)
+            - medium: The language medium (English, Hindi, Telugu, Tamil, Kannada, Malayalam, Marathi, Gujarati, Bengali, Urdu, etc.)
+            - grade: The grade/class level (Class 1, Class 2, Class 3, Class 4, Class 5, Class 6, Class 7, Class 8, Class 9, Class 10, Class 11, Class 12, Primary, Secondary, Higher Secondary, etc.)
+            - subject: The subject area (Mathematics, Science, Physics, Chemistry, Biology, English, Social Studies, History, Geography, Computer Science, Physical Education, Art, Music, Environmental Studies, Sanskrit, etc.)
+            
+            Guidelines:
+            - If you cannot determine a field, set it to null
+            - For board: Use standard abbreviations (CBSE, ICSE, IB, IGCSE, etc.)
+            - For medium: Use the language name in title case (English, Hindi, etc.)
+            - For grade: Use the exact format (Class 10, Primary, etc.)
+            - For subject: Use the subject name in title case (Mathematics, Physics, etc.)
+            
+            Example output: {{"board": "CBSE", "medium": "English", "grade": "Class 10", "subject": "Mathematics", "confidence": 0.8}}
+            
+            Return ONLY the JSON object, no additional text.
+            """
+            
+            response = self.llm.generate(prompt)
+
+            print("===== response === ", response)
+            
+            # Try to extract JSON from response
+            import json
+            import re
+            
+            # First, try to parse the entire response as JSON
+            try:
+                metadata = json.loads(response.strip())
+                print("===== parsed metadata === ", metadata)
+                
+                # Validate and normalize the metadata
+                validated_metadata = {
+                    'board': metadata.get('board'),
+                    'medium': metadata.get('medium'),
+                    'grade': metadata.get('grade'),
+                    'subject': metadata.get('subject')
+                }
+                
+                print("===== validated_metadata === ", validated_metadata)
+                return validated_metadata
+                
+            except (json.JSONDecodeError, ValueError, TypeError) as e:
+                print(f"Direct JSON parsing failed: {e}")
+                
+                # Fallback: try to extract JSON using regex
+                # Use a more flexible regex that handles nested objects
+                json_match = re.search(r'\{.*\}', response, re.DOTALL)
+                if json_match:
+                    try:
+                        metadata = json.loads(json_match.group())
+                        print("===== regex parsed metadata === ", metadata)
+                        
+                        # Validate and normalize the metadata
+                        validated_metadata = {
+                            'board': metadata.get('board'),
+                            'medium': metadata.get('medium'),
+                            'grade': metadata.get('grade'),
+                            'subject': metadata.get('subject')
+                        }
+                        
+                        print("===== regex validated_metadata === ", validated_metadata)
+                        return validated_metadata
+                        
+                    except (json.JSONDecodeError, ValueError, TypeError) as e2:
+                        print(f"Regex JSON parsing failed: {e2}")
+                        pass
+            
+            # Fallback: return empty metadata
+            print("===== returning fallback metadata === ")
+            return {
+                'board': None,
+                'medium': None,
+                'grade': None,
+                'subject': None
+            }
+            
+        except Exception as e:
+            print(f"LLM metadata extraction failed: {e}")
+            return {
+                'board': None,
+                'medium': None,
+                'grade': None,
+                'subject': None
+            }

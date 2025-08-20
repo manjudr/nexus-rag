@@ -66,6 +66,10 @@ class PDFParser:
                 course_info.append(f"Course: {course_meta['course_title']}")
             if course_meta.get('subject'):
                 course_info.append(f"Subject: {course_meta['subject']}")
+            if course_meta.get('medium'):
+                course_info.append(f"Medium: {course_meta['medium']}")
+            if course_meta.get('board'):
+                course_info.append(f"Board: {course_meta['board']}")
             if course_meta.get('author'):
                 course_info.append(f"Author: {course_meta['author']}")
             if course_meta.get('grade'):
@@ -125,7 +129,6 @@ class PDFParser:
                                         "board": course_meta.get('board'),
                                         "topics": course_meta.get('topics', [])
                                     })
-                                
                                 metadata.append(chunk_metadata)
                         
                         # Progress indicator
